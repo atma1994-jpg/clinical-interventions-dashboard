@@ -1,0 +1,2122 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" id="html-root">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" id="viewport-meta" content="width=device-width, initial-scale=1.0">
+<script>
+/* Some Android browsers ignore the viewport meta tag when a file is opened
+   locally (e.g. content://downloads/... from the Downloads app) and default
+   to a wide ~980px desktop layout instead of the real screen width. Force
+   the correct width using the physical screen size as soon as possible. */
+(function(){
+  /* Some in-app/file viewers (e.g. opening via content://downloads/...)
+     ignore viewport-meta changes made after parse, so the layout viewport
+     stays "wide" and CSS @media queries never switch to mobile mode even
+     though the physical screen is narrow. To be safe regardless of that,
+     we ALSO measure the real screen width with JS and toggle plain classes
+     on <html> (is-mobile / is-tablet-down). CSS rules keyed off those
+     classes work unconditionally, with no dependency on media queries or
+     the viewport meta tag being respected. */
+  function fixLayout(){
+    var w = (window.screen && window.screen.width) ? window.screen.width : window.innerWidth;
+    if(!w || w < 200) return;
+    var meta = document.getElementById('viewport-meta');
+    if(meta) meta.setAttribute('content', 'width=' + w + ', initial-scale=1.0, maximum-scale=1.0');
+    var root = document.documentElement;
+    root.classList.toggle('is-mobile', w <= 700);
+    root.classList.toggle('is-tablet-down', w <= 1100);
+  }
+  fixLayout();
+  document.addEventListener('DOMContentLoaded', fixLayout);
+  window.addEventListener('orientationchange', fixLayout);
+  window.addEventListener('resize', fixLayout);
+})();
+</script>
+<title>داشبورد الصيدلة الإكلينيكية</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root, html[data-theme="light"]{
+  /* palette from reference: #001B48 #02457A #018ABE #97CADB #D6E8EE */
+  --p-navy:#001B48;
+  --p-navy2:#02457A;
+  --p-teal:#018ABE;
+  --p-blue:#97CADB;
+  --p-pale:#D6E8EE;
+
+  --bg-grad: linear-gradient(160deg, var(--p-pale), var(--p-blue) 120%);
+  --navy:#001B48;
+  --navy-2:#02457A;
+  --teal:#018ABE;
+  --teal-dark:#02457A;
+  --mint-bg:rgba(1,138,190,.14); --mint-ic:#018ABE;
+  --coral-bg:rgba(217,119,87,.16); --coral-ic:#D97757;
+  --blue-bg:rgba(151,202,219,.35); --blue-ic:#02457A;
+  --gold-bg:rgba(185,138,30,.16); --gold-ic:#B98A1E;
+  --line:rgba(2,69,122,.14);
+  --muted:#3E6C93;
+  --white:#FFFFFF;
+  --danger:#D65C4A;
+
+  --card-bg: rgba(255,255,255,.5);
+  --card-border: rgba(255,255,255,.65);
+  --card-blur: blur(18px) saturate(160%);
+  --bg-2: rgba(255,255,255,.4);
+  --sidebar-grad: linear-gradient(180deg, var(--p-navy), var(--p-navy2));
+  --sidebar-ink: #EAF3FA;
+  --sidebar-muted: #9FC0DC;
+  --nav-active-bg: rgba(255,255,255,.16);
+  --nav-active-border: rgba(255,255,255,.28);
+  --chart-a:#02457A; --chart-b:#018ABE; --chart-c:#D97757; --chart-d:#0B5750;
+}
+html[data-theme="dark"]{
+  --bg-grad: linear-gradient(135deg, var(--p-navy), #3E6C9C);
+  --navy:#EAF3FA;
+  --navy-2:#D6E8EE;
+  --teal:#97CADB;
+  --teal-dark:#D6E8EE;
+  --mint-bg:rgba(151,202,219,.18); --mint-ic:#BEE0EE;
+  --coral-bg:rgba(217,119,87,.22); --coral-ic:#F0A98D;
+  --blue-bg:rgba(151,202,219,.16); --blue-ic:#D6E8EE;
+  --gold-bg:rgba(233,193,90,.2); --gold-ic:#F0D28C;
+  --line:rgba(255,255,255,.16);
+  --muted:#B9D4E8;
+  --white:#0E2A4A;
+  --danger:#F0A98D;
+
+  --card-bg: rgba(255,255,255,.07);
+  --card-border: rgba(255,255,255,.16);
+  --card-blur: blur(18px) saturate(140%);
+  --bg-2: rgba(255,255,255,.06);
+  --sidebar-grad: linear-gradient(180deg, #00101F, var(--p-navy2));
+  --sidebar-ink: #EAF3FA;
+  --sidebar-muted: #8FB4D4;
+  --nav-active-bg: rgba(255,255,255,.12);
+  --nav-active-border: rgba(255,255,255,.22);
+  --chart-a:#97CADB; --chart-b:#D6E8EE; --chart-c:#F0A98D; --chart-d:#BEE0EE;
+}
+.frost{background:var(--card-bg);border:1px solid var(--card-border);-webkit-backdrop-filter:var(--card-blur);backdrop-filter:var(--card-blur);}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;}
+body{font-family:'Cairo',sans-serif;background:var(--bg-grad);background-attachment:fixed;color:var(--navy);-webkit-font-smoothing:antialiased;transition:background .3s,color .3s;}
+html[dir="ltr"] body{font-family:'Poppins','Cairo',sans-serif;}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:var(--mint-bg);border-radius:8px;}
+
+/* ---------- Auth ---------- */
+#auth-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg-grad);padding:24px;}
+.auth-card{background:var(--card-bg);-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);width:100%;max-width:420px;border-radius:22px;padding:36px 32px;box-shadow:0 25px 70px -25px rgba(0,27,72,.45);border:1px solid var(--card-border);}
+.auth-logo{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.auth-logo .dot{width:14px;height:14px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 5px var(--mint-bg);}
+.auth-logo span{font-weight:800;font-size:20px;color:var(--navy);}
+.auth-sub{color:var(--muted);font-size:14px;margin-bottom:24px;}
+.tabbar{display:flex;background:var(--bg-2);border-radius:12px;padding:4px;margin-bottom:22px;}
+.tabbar button{flex:1;border:none;background:transparent;padding:10px;border-radius:9px;font-weight:700;color:var(--muted);font-size:14px;}
+.tabbar button.active{background:var(--card-bg);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:var(--teal-dark);box-shadow:0 2px 8px rgba(0,0,0,.08);}
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:13px;font-weight:700;color:var(--navy);margin-bottom:6px;}
+.field input,.field select,.field textarea{width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;background:var(--bg-2);outline:none;transition:.15s;}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--teal);background:rgba(255,255,255,.6);}
+.btn-primary{width:100%;padding:12px;border:none;border-radius:10px;background:var(--teal-dark);color:#fff;font-weight:800;font-size:15px;transition:.15s;}
+.btn-primary:hover{background:var(--navy-2);}
+.btn-primary:disabled{opacity:.6;cursor:not-allowed;}
+.auth-error{background:var(--coral-bg);color:var(--coral-ic);font-size:13px;padding:10px 12px;border-radius:9px;margin-bottom:14px;font-weight:600;}
+.auth-hidden{display:none;}
+
+/* ---------- Shell ---------- */
+#app{display:none;min-height:100vh;}
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:230px;flex-shrink:0;background:var(--sidebar-grad);border-inline-end:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;padding:22px 14px;position:sticky;top:0;height:100vh;color:var(--sidebar-ink);}
+.brand{display:flex;align-items:center;gap:10px;padding:0 6px 20px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:16px;}
+.brand .mark{width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;}
+.brand .txt{font-weight:800;font-size:14px;line-height:1.2;color:var(--sidebar-ink);}
+.brand .txt small{display:block;color:var(--sidebar-muted);font-weight:600;font-size:10.5px;}
+.nav-item{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:11px;margin-bottom:4px;color:var(--sidebar-muted);font-weight:700;font-size:13.5px;border:1px solid transparent;background:transparent;width:100%;text-align:start;transition:.15s;}
+.nav-item:hover{background:rgba(255,255,255,.08);color:var(--sidebar-ink);}
+.nav-item.active{background:var(--nav-active-bg);border-color:var(--nav-active-border);color:#fff;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:0 6px 16px -6px rgba(0,0,0,.35);}
+.nav-spacer{flex:1;}
+.sidebar-foot{border-top:1px solid rgba(255,255,255,.12);padding-top:12px;margin-top:8px;}
+.user-chip{display:flex;align-items:center;gap:10px;padding:8px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);margin-bottom:8px;cursor:pointer;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);}
+.user-chip:hover{background:rgba(255,255,255,.14);}
+.user-chip .av{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.18);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;}
+.user-chip .meta{line-height:1.25;overflow:hidden;}
+.user-chip .meta b{font-size:12.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;color:var(--sidebar-ink);}
+.user-chip .meta span{font-size:10.5px;color:var(--sidebar-muted);font-weight:700;}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column;}
+.topbar{height:66px;flex-shrink:0;background:var(--card-bg);-webkit-backdrop-filter:var(--card-blur);backdrop-filter:var(--card-blur);border-bottom:1px solid var(--card-border);display:flex;align-items:center;justify-content:space-between;padding:0 26px;position:sticky;top:0;z-index:5;gap:14px;}
+.topbar h1{font-size:17px;margin:0;font-weight:800;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.topbar-left{display:flex;align-items:center;gap:10px;flex:1;min-width:0;}
+.topbar-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.lang-btn,.theme-btn{background:rgba(255,255,255,.35);border:1px solid var(--card-border);border-radius:9px;padding:8px 12px;font-weight:800;font-size:12px;color:var(--teal-dark);}
+.lang-btn:hover,.theme-btn:hover{background:rgba(255,255,255,.55);}
+.content{padding:24px 26px;flex:1;width:100%;max-width:1440px;margin:0 auto;box-sizing:border-box;}
+
+.btn-green{background:var(--teal-dark);color:#fff;border:none;border-radius:10px;padding:10px 16px;font-weight:800;font-size:13px;display:inline-flex;align-items:center;gap:6px;}
+.btn-green:hover{background:var(--navy-2);filter:brightness(1.1);}
+.btn-ghost{background:rgba(255,255,255,.35);color:var(--teal-dark);border:1px solid var(--card-border);border-radius:10px;padding:9px 15px;font-weight:800;font-size:13px;}
+.btn-ghost:hover{background:rgba(255,255,255,.55);}
+.btn-outline{background:transparent;border:1.5px solid var(--line);border-radius:9px;padding:7px 11px;font-size:12px;font-weight:700;color:var(--muted);}
+
+.grid{display:grid;gap:16px;}
+.cols-4{grid-template-columns:repeat(4,1fr);}
+.cols-3{grid-template-columns:1.1fr 1.1fr 1.4fr;}
+.cols-2{grid-template-columns:1fr 1fr;}
+.cols-2b{grid-template-columns:1.6fr 1fr;}
+@media(max-width:1100px){.cols-4{grid-template-columns:repeat(2,1fr);}.cols-3{grid-template-columns:repeat(2,1fr);}.cols-2b{grid-template-columns:1fr;}}
+@media(max-width:700px){
+  .cols-4,.cols-3,.cols-2,.cols-2b{grid-template-columns:1fr;}
+  .sidebar{position:fixed;top:0;bottom:0;z-index:60;width:80vw;max-width:280px;height:100vh;transition:transform .25s ease;box-shadow:0 0 40px rgba(0,0,0,.35);}
+  html[dir="rtl"] .sidebar{right:0;left:auto;transform:translateX(100%);}
+  html[dir="rtl"] .sidebar.open{transform:translateX(0);}
+  html[dir="ltr"] .sidebar{left:0;right:auto;transform:translateX(-100%);}
+  html[dir="ltr"] .sidebar.open{transform:translateX(0);}
+  .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,10,25,.45);z-index:55;}
+  .sidebar-backdrop.show{display:block;}
+}
+
+/* ---------- Reliable responsive layout (class-based) ----------
+   Mirrors the @media rules above but is driven by JS-measured screen
+   width (see head script) instead of the CSS layout viewport. Some
+   WebViews/file-viewers misreport viewport width, which makes @media
+   queries alone unreliable; these class rules always work because they
+   don't depend on viewport width being reported correctly. Specificity
+   here is naturally higher than the plain rules above, so it always wins
+   once the class is present. */
+html.is-tablet-down .cols-4,
+html.is-tablet-down .cols-3{grid-template-columns:repeat(2,1fr);}
+html.is-tablet-down .cols-2b{grid-template-columns:1fr;}
+
+html.is-mobile .cols-4,
+html.is-mobile .cols-3,
+html.is-mobile .cols-2,
+html.is-mobile .cols-2b{grid-template-columns:1fr;}
+
+html.is-mobile .sidebar{position:fixed;top:0;bottom:0;z-index:60;width:80vw;max-width:280px;height:100vh;transition:transform .25s ease;box-shadow:0 0 40px rgba(0,0,0,.35);}
+html.is-mobile[dir="rtl"] .sidebar{right:0;left:auto;transform:translateX(100%);}
+html.is-mobile[dir="rtl"] .sidebar.open{transform:translateX(0);}
+html.is-mobile[dir="ltr"] .sidebar{left:0;right:auto;transform:translateX(-100%);}
+html.is-mobile[dir="ltr"] .sidebar.open{transform:translateX(0);}
+html.is-mobile .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,10,25,.45);z-index:55;}
+html.is-mobile .sidebar-backdrop.show{display:block;}
+html.is-mobile .hamburger{display:block;}
+html.is-mobile .formrow{grid-template-columns:1fr;}
+
+/* Mobile topbar: keep every action reachable without horizontal overflow
+   by shrinking to icon-only buttons and allowing a graceful wrap on very
+   narrow screens instead of clipping. */
+html.is-mobile .topbar{height:auto;min-height:60px;padding:10px 14px;flex-wrap:wrap;row-gap:8px;}
+html.is-mobile .topbar-actions{flex-wrap:wrap;justify-content:flex-end;gap:6px;}
+html.is-mobile .topbar h1{font-size:15.5px;}
+html.is-mobile .btn-green span,
+html.is-mobile #btn-add-leader-top span{display:none;}
+html.is-mobile .btn-green{padding:10px;}
+html.is-mobile #btn-add-leader-top{padding:9px 10px;}
+html.is-mobile .lang-btn,html.is-mobile .theme-btn{padding:8px 10px;}
+html.is-mobile .content{padding:16px 14px;}
+html.is-mobile .grid{gap:12px;}
+html.is-mobile .card,html.is-mobile .stat-card,html.is-mobile .dep-card{padding:14px;}
+html.is-mobile h2.page-title{font-size:18px;}
+
+.card{background:var(--card-bg);-webkit-backdrop-filter:var(--card-blur);backdrop-filter:var(--card-blur);border:1px solid var(--card-border);border-radius:18px;padding:20px;}
+.stat-card{background:var(--card-bg);-webkit-backdrop-filter:var(--card-blur);backdrop-filter:var(--card-blur);border:1px solid var(--card-border);border-radius:16px;padding:16px;display:flex;align-items:center;gap:12px;}
+.stat-card .ic{width:44px;height:44px;border-radius:12px;background:var(--mint-bg);color:var(--mint-ic);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.stat-card .num{font-size:20px;font-weight:800;color:var(--navy);}
+.stat-card .lbl{font-size:11.5px;color:var(--muted);font-weight:700;}
+
+.section-title{font-size:14.5px;font-weight:800;margin:0 0 14px;color:var(--navy);}
+h2.page-title{font-size:20px;font-weight:800;margin:0 0 4px;color:var(--navy);}
+p.page-sub{color:var(--muted);font-size:13px;margin:0 0 18px;}
+
+.dep-card{background:var(--card-bg);-webkit-backdrop-filter:var(--card-blur);backdrop-filter:var(--card-blur);border:1px solid var(--card-border);border-radius:16px;padding:18px;cursor:pointer;transition:.15s;}
+.dep-card:hover{border-color:var(--teal);box-shadow:0 10px 24px -14px rgba(2,69,122,.4);transform:translateY(-2px);}
+.dep-card .name{font-weight:800;font-size:15px;color:var(--navy);}
+.dep-card .sub{color:var(--muted);font-size:12px;margin-top:2px;}
+.dep-card .count{margin-top:12px;font-size:22px;font-weight:800;color:var(--teal-dark);}
+.add-dep-card{border:2px dashed var(--card-border);border-radius:16px;padding:18px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;color:var(--muted);font-weight:800;font-size:13px;cursor:pointer;min-height:110px;}
+.add-dep-card:hover{border-color:var(--teal);color:var(--teal-dark);background:var(--bg-2);}
+
+.pill{display:inline-flex;align-items:center;gap:5px;background:var(--mint-bg);color:var(--mint-ic);font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:99px;}
+.pill.warn{background:var(--coral-bg);color:var(--coral-ic);}
+.pill.muted{background:var(--bg-2);color:var(--muted);}
+
+.list-row{display:flex;align-items:center;justify-content:space-between;padding:11px 4px;border-bottom:1px solid var(--line);}
+.list-row:last-child{border-bottom:none;}
+.bar-row{margin-bottom:9px;}
+.bar-row .top{display:flex;justify-content:space-between;font-size:12px;font-weight:700;margin-bottom:4px;color:var(--navy);}
+.bar-track{height:7px;background:var(--bg-2);border-radius:99px;overflow:hidden;}
+.bar-fill{height:100%;background:var(--teal-dark);border-radius:99px;}
+.pharm-row{display:flex;align-items:center;gap:12px;padding:12px 10px;border-radius:12px;cursor:pointer;}
+.pharm-row:hover{background:var(--bg-2);}
+.pharm-row .av{width:36px;height:36px;border-radius:50%;background:var(--teal-dark);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:13px;}
+
+.back-link{display:inline-flex;align-items:center;gap:6px;color:var(--teal-dark);font-weight:800;font-size:13px;background:none;border:none;margin-bottom:14px;}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(0,15,35,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;}
+.modal{background:var(--card-bg);-webkit-backdrop-filter:blur(28px) saturate(160%);backdrop-filter:blur(28px) saturate(160%);border:1px solid var(--card-border);border-radius:18px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:26px;}
+.modal h3{margin:0 0 4px;font-size:17px;font-weight:800;color:var(--navy);}
+.modal-pos{position:relative;}
+.formrow{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+@media(max-width:500px){.formrow{grid-template-columns:1fr;}}
+.checkbox-row{display:flex;align-items:center;gap:8px;background:var(--bg-2);padding:10px 12px;border-radius:10px;margin-bottom:12px;}
+.checkbox-row input{width:16px;height:16px;}
+.checkbox-row label{font-size:13px;font-weight:700;}
+.conditional-block{border-inline-start:3px solid var(--teal);padding:12px;margin:10px 0 16px;background:var(--bg-2);border-radius:0 10px 10px 0;}
+
+.filter-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px;background:var(--card-bg);-webkit-backdrop-filter:var(--card-blur);backdrop-filter:var(--card-blur);border:1px solid var(--card-border);border-radius:14px;padding:10px 14px;}
+.filter-bar select{padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;font-size:12.5px;font-weight:700;background:var(--bg-2);color:var(--navy);}
+.filter-bar .flabel{font-size:12px;color:var(--muted);font-weight:800;}
+
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+.cal-head{text-align:center;font-size:11px;font-weight:800;color:var(--muted);padding-bottom:6px;}
+.cal-day{min-height:76px;border:1px solid var(--card-border);border-radius:10px;padding:6px;font-size:12px;background:var(--card-bg);cursor:pointer;position:relative;}
+.cal-day.empty{background:transparent;border:none;cursor:default;}
+.cal-day:hover:not(.empty){border-color:var(--teal);}
+.cal-day .dnum{font-weight:800;font-size:12px;color:var(--navy);}
+.cal-day.today{background:var(--mint-bg);border-color:var(--teal);}
+.cal-day.today .dnum{color:var(--mint-ic);}
+.cal-day .evt-dot{font-size:9.5px;background:var(--blue-bg);color:var(--blue-ic);border-radius:6px;padding:1px 5px;margin-top:3px;display:block;font-weight:700;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+
+.clock-card{background:var(--card-bg);-webkit-backdrop-filter:var(--card-blur);backdrop-filter:var(--card-blur);border:1px solid var(--card-border);border-radius:18px;padding:18px;display:flex;align-items:center;gap:16px;}
+.clock-face{width:78px;height:78px;border-radius:50%;background:var(--bg-2);border:1.5px solid var(--line);position:relative;flex-shrink:0;}
+.clock-face .tick{position:absolute;width:2px;height:6px;background:var(--muted);left:50%;top:3px;transform-origin:1px 36px;opacity:.5;}
+.clock-hand{position:absolute;left:50%;bottom:50%;transform-origin:bottom center;background:var(--navy);border-radius:3px;}
+.clock-hand.hour{width:3px;height:20px;margin-left:-1.5px;}
+.clock-hand.minute{width:2px;height:28px;margin-left:-1px;background:var(--teal-dark);}
+.clock-hand.second{width:1px;height:30px;margin-left:-.5px;background:var(--coral-ic);}
+.clock-center{position:absolute;left:50%;top:50%;width:6px;height:6px;background:var(--navy);border-radius:50%;transform:translate(-50%,-50%);}
+.clock-digital b{font-size:22px;color:var(--navy);display:block;}
+.clock-digital span{font-size:12px;color:var(--muted);font-weight:700;}
+.mini-cal-card{background:var(--card-bg);-webkit-backdrop-filter:var(--card-blur);backdrop-filter:var(--card-blur);border:1px solid var(--card-border);border-radius:18px;padding:18px;}
+.mini-cal-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.mini-cal-title b{font-size:14px;color:var(--navy);}
+.mini-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.mini-cal .h{font-size:9.5px;color:var(--muted);text-align:center;font-weight:700;padding-bottom:3px;}
+.mini-cal .d{font-size:11px;text-align:center;padding:6px 0;border-radius:8px;color:var(--navy);position:relative;}
+.mini-cal .d.has::after{content:'';position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--blue-ic);}
+.mini-cal .d.today{background:var(--teal-dark);color:#fff;font-weight:800;}
+.mini-cal .d.blank{visibility:hidden;}
+
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:200;}
+.empty-state{text-align:center;padding:44px 20px;color:var(--muted);}
+.empty-state .ic{font-size:32px;margin-bottom:8px;}
+.badge-role{font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;background:var(--mint-bg);color:var(--mint-ic);}
+.badge-role.leader{background:var(--gold-bg);color:var(--gold-ic);}
+.loader{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--muted);font-weight:700;font-size:13px;}
+.hamburger{display:none;border:none;background:var(--bg-2);border-radius:8px;padding:8px;flex-shrink:0;}
+.topbar-left h1{min-width:0;flex:1;}
+@media(max-width:700px){.hamburger{display:block;}}
+.legend-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-inline-end:6px;}
+</style>
+</head>
+<body>
+
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo"><div class="dot"></div><span id="t-brand">Clinical Pharmacy</span></div>
+    <div class="auth-sub" id="t-authsub">داشبورد قسم الصيدلة الإكلينيكية</div>
+    <div class="tabbar">
+      <button id="tab-login" class="active">تسجيل الدخول</button>
+      <button id="tab-register">حساب جديد</button>
+    </div>
+    <div id="auth-error" class="auth-error" style="display:none;"></div>
+
+    <form id="form-login">
+      <div class="field"><label>البريد الإلكتروني</label><input type="email" id="li-email" required></div>
+      <div class="field"><label>كلمة المرور</label><input type="password" id="li-pass" required></div>
+      <button class="btn-primary" type="submit" id="li-btn">دخول</button>
+      <button type="button" id="btn-forgot" style="background:none;border:none;color:var(--teal-dark);font-size:12.5px;font-weight:700;margin-top:12px;width:100%;text-align:center;">نسيت كلمة المرور؟</button>
+    </form>
+
+    <form id="form-forgot" class="auth-hidden">
+      <p class="auth-sub" style="margin-top:-8px;" id="t-forgot-sub">أدخل بريدك الإلكتروني وسنرسل لك رابط إعادة تعيين كلمة المرور</p>
+      <div class="field"><label>البريد الإلكتروني</label><input type="email" id="fg-email" required></div>
+      <button class="btn-primary" type="submit" id="fg-btn">إرسال رابط إعادة التعيين</button>
+      <button type="button" id="btn-back-login" style="background:none;border:none;color:var(--muted);font-size:12.5px;font-weight:700;margin-top:12px;width:100%;text-align:center;">→ رجوع لتسجيل الدخول</button>
+    </form>
+
+    <form id="form-reset" class="auth-hidden">
+      <p class="auth-sub" style="margin-top:-8px;">أدخل كلمة المرور الجديدة لحسابك</p>
+      <div class="field"><label>كلمة المرور الجديدة</label><input type="password" id="rs-pass" required minlength="6"></div>
+      <button class="btn-primary" type="submit" id="rs-btn">تحديث كلمة المرور</button>
+    </form>
+
+    <form id="form-register" class="auth-hidden">
+      <div class="field"><label>الاسم الكامل</label><input type="text" id="re-name" required></div>
+      <div class="field"><label>القسم</label><select id="re-dept" required><option value="">اختر القسم...</option></select></div>
+      <div class="field"><label>البريد الإلكتروني</label><input type="email" id="re-email" required></div>
+      <div class="field"><label>كلمة المرور</label><input type="password" id="re-pass" required minlength="6"></div>
+      <button class="btn-primary" type="submit" id="re-btn">إنشاء الحساب</button>
+    </form>
+  </div>
+</div>
+
+<div id="app">
+<div class="shell">
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="mark">Rx</div><div class="txt" id="brand-txt">الصيدلة الإكلينيكية<small>Clinical Pharmacy</small></div></div>
+    <nav id="nav"></nav>
+    <div class="nav-spacer"></div>
+    <div class="sidebar-foot">
+      <div class="user-chip" id="user-chip">
+        <div class="av" id="user-av">؟</div>
+        <div class="meta"><b id="user-name">-</b><span id="user-role">-</span></div>
+      </div>
+      <button class="nav-item" id="btn-logout" style="color:#D65C4A;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span id="t-logout">تسجيل الخروج</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <button class="hamburger" id="btn-hamburger">☰</button>
+        <h1 id="topbar-title">الرئيسية</h1>
+      </div>
+      <div class="topbar-actions">
+        <button class="lang-btn" id="btn-lang">EN</button>
+        <button class="theme-btn" id="btn-theme" title="Light/Dark">🌙</button>
+        <button class="btn-outline" id="btn-add-leader-top" style="display:none;" title="Team Leaders">
+          👥 <span id="t-addleader">قادة الفريق</span>
+        </button>
+        <button class="btn-green" id="btn-new-intervention">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span id="t-newiv">تسجيل تداخل دوائي</span>
+        </button>
+        <button class="btn-outline" id="btn-logout-top" title="تسجيل الخروج" style="color:#D65C4A;border-color:#D65C4A;padding:9px 12px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="content" id="content"><div class="loader">جاري التحميل...</div></div>
+  </div>
+</div>
+</div>
+
+<script>
+/* ============================================================ CONFIG */
+const SUPABASE_URL = "https://ownxavwjxzooepthewxa.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93bnhhdndqeHpvb2VwdGhld3hhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3ODM0MzIsImV4cCI6MjEwMjM1OTQzMn0.zOivTKywTW_vYmfWS2Cec9W2O-ooojrW2wXUHzaUqWM";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* Original hospital KPI Excel template (uploaded by user), embedded so exports are byte-faithful to it */
+const HOSPITAL_KPI_TEMPLATE_B64 = "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";
+
+/* ============================================================ i18n */
+let LANG = 'ar';
+const DICT = {
+  ar:{brand:'الصيدلة الإكلينيكية', authsub:'داشبورد قسم الصيدلة الإكلينيكية', logout:'تسجيل الخروج', newiv:'تسجيل تداخل دوائي',
+    nav_home:'الرئيسية', nav_departments:'الأقسام', nav_kpis:'المؤشرات KPI', nav_antibiotics:'المضادات الحيوية', nav_calendar:'التقويم',
+    welcome:'مرحبًا،', overview:'نظرة عامة على أداء القسم', total_iv:'إجمالي التداخلات', total_dtp:'مشاكل علاجية (DTP)', total_me:'أخطاء دوائية', total_depts:'عدد الأقسام',
+    top_depts:'أفضل الأقسام أداءً', pharmacists:'عدد الصيادلة', accept_rate:'نسبة القبول مقابل الرفض', trend:'اتجاه التداخلات', last6:'آخر 6 أشهر', calendar_card:'التقويم',
+    departments:'الأقسام', choose_dept:'اختر قسمًا لعرض أدائه والصيادلة العاملين فيه', add_dept:'إضافة قسم', back_depts:'رجوع إلى الأقسام', back_dept:'رجوع إلى القسم',
+    dept_pharms:'الصيادلة في القسم', month_iv:'تداخل هذا الشهر', filter_year:'السنة', filter_month:'الشهر', filter_day:'اليوم', all:'الكل',
+    kpis:'مؤشرات الأداء (KPIs)', kpis_sub:'إحصائيات مباشرة من كل التداخلات المسجلة', view_only:'للعرض فقط',
+    antibiotics:'المضادات الحيوية', antibiotics_sub:'سيتم بناء هذا القسم لاحقًا', antibiotics_wip:'قسم متابعة المضادات الحيوية قيد الإنشاء',
+    nav_policies:'السياسات', policies:'السياسات', policies_sub:'سيتم بناء هذا القسم لاحقًا', policies_wip:'قسم السياسات والإجراءات قيد الإنشاء',
+    kpi_dept_card:'KPI القسم', kpi_hosp_card:'KPI المستشفيات', kpi_ivk_card:'Intervention', filter_week:'الأسبوع',
+    nav_notes:'الملاحظات', notes:'الملاحظات', notes_sub:'سيتم بناء هذا القسم لاحقًا', notes_wip:'قسم الملاحظات قيد الإنشاء',
+    calendar:'التقويم', calendar_sub:'اضغط على أي يوم لإضافة حدث', prev:'السابق', next:'التالي',
+    account:'حسابي', my_dept:'قسمي الحالي', change_dept:'تغيير القسم', save:'حفظ', cancel:'إلغاء',
+    export_excel:'تصدير Excel', month_all_iv:'كل تداخلات الشهر',
+    manage_leaders:'قادة الفريق', add_leader:'إضافة قائد', leader_email_ph:'بريد القائد الإلكتروني',
+    current_leaders:'القادة الحاليون', remove:'إزالة', leader_added:'تمت إضافة القائد ✅', leader_removed:'تمت الإزالة',
+    leader_hint:'يشترط أن يسجّل الشخص حسابًا بنفس البريد ليُفعَّل له دور القائد تلقائيًا.'
+  },
+  en:{brand:'Clinical Pharmacy', authsub:'Clinical Pharmacy Department Dashboard', logout:'Log out', newiv:'Log Intervention',
+    nav_home:'Home', nav_departments:'Departments', nav_kpis:'KPIs', nav_antibiotics:'Antibiotics', nav_calendar:'Calendar',
+    welcome:'Welcome,', overview:'Department performance overview', total_iv:'Total Interventions', total_dtp:'DTP Issues', total_me:'Medication Errors', total_depts:'Departments',
+    top_depts:'Top Performing Departments', pharmacists:'Pharmacists', accept_rate:'Acceptance vs Rejection', trend:'Interventions Trend', last6:'Last 6 months', calendar_card:'Calendar',
+    departments:'Departments', choose_dept:'Choose a department to view performance and pharmacists', add_dept:'Add Department', back_depts:'Back to Departments', back_dept:'Back to Department',
+    dept_pharms:'Pharmacists in Department', month_iv:'this month', filter_year:'Year', filter_month:'Month', filter_day:'Day', all:'All',
+    kpis:'Performance Indicators (KPIs)', kpis_sub:'Live statistics from all logged interventions', view_only:'View only',
+    antibiotics:'Antibiotics', antibiotics_sub:'This section will be built later', antibiotics_wip:'Antibiotics tracking is under construction',
+    nav_policies:'Policies', policies:'Policies', policies_sub:'This section will be built later', policies_wip:'Policies section is under construction',
+    kpi_dept_card:'Department KPI', kpi_hosp_card:'Hospital KPI', kpi_ivk_card:'Intervention', filter_week:'Week',
+    nav_notes:'Notes', notes:'Notes', notes_sub:'This section will be built later', notes_wip:'Notes section is under construction',
+    calendar:'Calendar', calendar_sub:'Click any day to add an event', prev:'Previous', next:'Next',
+    account:'My Account', my_dept:'Current Department', change_dept:'Change Department', save:'Save', cancel:'Cancel',
+    export_excel:'Export Excel', month_all_iv:'All interventions this month',
+    manage_leaders:'Team Leaders', add_leader:'Add Leader', leader_email_ph:'Leader email address',
+    current_leaders:'Current Leaders', remove:'Remove', leader_added:'Leader added ✅', leader_removed:'Removed',
+    leader_hint:'The person must register an account with the same email for the leader role to activate automatically.'
+  }
+};
+function t(k){return DICT[LANG][k]||k;}
+function L(ar,en){return LANG==='ar'?ar:en;}
+
+const NAV_ITEMS = [
+  {id:'home', key:'nav_home', icon:iHome},
+  {id:'departments', key:'nav_departments', icon:iDept},
+  {id:'kpis', key:'nav_kpis', icon:iChart},
+  {id:'antibiotics', key:'nav_antibiotics', icon:iPill},
+  {id:'policies', key:'nav_policies', icon:iPolicy},
+  {id:'notes', key:'nav_notes', icon:iNotes},
+  {id:'calendar', key:'nav_calendar', icon:iCal},
+];
+function iPolicy(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M20.5 12c0 4.5-3 8-8.5 10-5.5-2-8.5-5.5-8.5-10V5l8.5-3 8.5 3v7Z"/></svg>`}
+function iNotes(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>`}
+function iHome(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h0a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V10"/></svg>`}
+function iDept(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`}
+function iChart(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`}
+function iPill(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.5 20.5 3.5 13.5a5 5 0 1 1 7-7l7 7a5 5 0 1 1-7 7Z"/><line x1="8.5" y1="8.5" x2="15.5" y2="15.5"/></svg>`}
+function iCal(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`}
+function iUsers(){return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`}
+
+const $ = (s,el=document)=>el.querySelector(s);
+const $$ = (s,el=document)=>[...el.querySelectorAll(s)];
+function toast(msg){const d=document.createElement('div');d.className='toast';d.textContent=msg;document.body.appendChild(d);setTimeout(()=>d.remove(),2600);}
+function esc(s){return (s??'').toString().replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function initials(name){return (name||'?').trim().split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();}
+function deptName(d){ if(!d) return '—'; return LANG==='en' ? (d.name_en||d.name_ar) : (d.name_ar||d.name_en); }
+function pad(n){return n.toString().padStart(2,'0');}
+function chartPalette(){
+  return THEME==='dark'
+    ? {navy:'#D6E8EE', teal:'#97CADB', teal2:'#BEE0EE', coral:'#F0A98D', mint:'#BEE0EE', grid:'rgba(255,255,255,.12)', text:'#EAF3FA'}
+    : {navy:'#001B48', teal:'#02457A', teal2:'#018ABE', coral:'#D97757', mint:'#0B5750', grid:'rgba(2,69,122,.10)', text:'#02457A'};
+}
+function setChartDefaults(){
+  const p = chartPalette();
+  Chart.defaults.color = p.text;
+  Chart.defaults.borderColor = p.grid;
+}
+
+/* ============================================================ STATE */
+let STATE = {
+  session:null, profile:null, isLeader:false,
+  departments:[], wards:[], drugs:[], refs:[], problemTypes:[], causes:[], stages:[], severities:[],
+  view:'home', deptDetail:null, pharmDetail:null,
+  calMonth:new Date().getMonth(), calYear:new Date().getFullYear(),
+  filter:{year:new Date().getFullYear(), month:'', day:''}
+};
+
+/* ============================================================ AUTH */
+$('#tab-login').onclick=()=>{$('#tab-login').classList.add('active');$('#tab-register').classList.remove('active');$('#form-login').classList.remove('auth-hidden');$('#form-register').classList.add('auth-hidden');$('#form-forgot').classList.add('auth-hidden');$('#auth-error').style.display='none';};
+$('#tab-register').onclick=()=>{$('#tab-register').classList.add('active');$('#tab-login').classList.remove('active');$('#form-register').classList.remove('auth-hidden');$('#form-login').classList.add('auth-hidden');$('#form-forgot').classList.add('auth-hidden');$('#auth-error').style.display='none';loadDeptsIntoSelect();};
+
+$('#btn-forgot').onclick=()=>{$('#form-login').classList.add('auth-hidden');$('#form-forgot').classList.remove('auth-hidden');$('#auth-error').style.display='none';};
+$('#btn-back-login').onclick=()=>{$('#form-forgot').classList.add('auth-hidden');$('#form-login').classList.remove('auth-hidden');$('#auth-error').style.display='none';};
+
+$('#form-forgot').addEventListener('submit', async(e)=>{
+  e.preventDefault(); $('#auth-error').style.display='none';
+  $('#fg-btn').disabled=true; $('#fg-btn').textContent='...';
+  const email=$('#fg-email').value.trim();
+  const {error} = await sb.auth.resetPasswordForEmail(email, {redirectTo: window.location.href.split('#')[0]});
+  $('#fg-btn').disabled=false; $('#fg-btn').textContent= LANG==='ar'?'إرسال رابط إعادة التعيين':'Send reset link';
+  if(error){ showAuthError(LANG==='ar'?'تعذر إرسال الرابط، تأكد من البريد الإلكتروني':'Could not send the link, check the email'); return; }
+  showAuthError(LANG==='ar'?'تم إرسال رابط إعادة التعيين إلى بريدك الإلكتروني، تحقق من صندوق الوارد':'A reset link has been sent to your email, check your inbox');
+});
+
+$('#form-reset').addEventListener('submit', async(e)=>{
+  e.preventDefault(); $('#auth-error').style.display='none';
+  $('#rs-btn').disabled=true; $('#rs-btn').textContent='...';
+  const {error} = await sb.auth.updateUser({password: $('#rs-pass').value});
+  $('#rs-btn').disabled=false; $('#rs-btn').textContent= LANG==='ar'?'تحديث كلمة المرور':'Update password';
+  if(error){ showAuthError(LANG==='ar'?'تعذر تحديث كلمة المرور':'Could not update password'); return; }
+  toast(LANG==='ar'?'تم تحديث كلمة المرور، جاري الدخول...':'Password updated, logging in...');
+  $('#form-reset').classList.add('auth-hidden');
+  $('#form-login').classList.remove('auth-hidden');
+  await bootApp();
+});
+
+sb.auth.onAuthStateChange((event, session)=>{
+  if(event==='SIGNED_OUT'){ location.reload(); }
+  if(event==='PASSWORD_RECOVERY'){
+    $('#form-login').classList.add('auth-hidden');
+    $('#form-register').classList.add('auth-hidden');
+    $('#form-forgot').classList.add('auth-hidden');
+    $('#form-reset').classList.remove('auth-hidden');
+  }
+});
+function showAuthError(msg){const e=$('#auth-error');e.textContent=msg;e.style.display='block';}
+
+async function loadDeptsIntoSelect(){
+  const sel=$('#re-dept');
+  const {data,error} = await sb.from('departments').select('id,name_ar,name_en').order('sort_order');
+  if(!error && data){
+    sel.innerHTML = `<option value="">${LANG==='ar'?'اختر القسم...':'Select department...'}</option>` + data.map(d=>`<option value="${d.id}">${esc(deptName(d))}</option>`).join('');
+  }
+}
+loadDeptsIntoSelect();
+
+$('#form-login').addEventListener('submit', async(e)=>{
+  e.preventDefault();$('#auth-error').style.display='none';
+  $('#li-btn').disabled=true; $('#li-btn').textContent='...';
+  const {error} = await sb.auth.signInWithPassword({email:$('#li-email').value.trim(), password:$('#li-pass').value});
+  $('#li-btn').disabled=false; $('#li-btn').textContent= LANG==='ar'?'دخول':'Login';
+  if(error){showAuthError(LANG==='ar'?'بيانات الدخول غير صحيحة':'Invalid credentials');return;}
+  await bootApp();
+});
+$('#form-register').addEventListener('submit', async(e)=>{
+  e.preventDefault();$('#auth-error').style.display='none';
+  $('#re-btn').disabled=true; $('#re-btn').textContent='...';
+  const {data:signUpData, error} = await sb.auth.signUp({email:$('#re-email').value.trim(), password:$('#re-pass').value,
+    options:{data:{full_name:$('#re-name').value.trim(), department_id:$('#re-dept').value}}});
+  $('#re-btn').disabled=false; $('#re-btn').textContent= LANG==='ar'?'إنشاء الحساب':'Create Account';
+  if(error){showAuthError(error.message.includes('already') ? (LANG==='ar'?'هذا البريد مسجل مسبقًا':'Email already registered') : (LANG==='ar'?'تعذر إنشاء الحساب':'Could not create account'));return;}
+  if(!signUpData?.session){
+    showAuthError(LANG==='ar'
+      ? 'تم إنشاء الحساب، لكن يتطلب تأكيد البريد الإلكتروني قبل الدخول. تحقق من بريدك، أو تواصل مع قائد القسم لتفعيل الحساب.'
+      : 'Account created, but email confirmation is required before login. Check your inbox, or contact your department leader.');
+    return;
+  }
+  await bootApp();
+});
+$('#btn-logout').onclick=async()=>{await sb.auth.signOut(); location.reload();};
+$('#btn-logout-top').onclick=async()=>{await sb.auth.signOut(); location.reload();};
+$('#btn-add-leader-top').onclick=openAccountModal;
+
+/* ============================================================ BOOT */
+async function bootApp(){
+  const {data:{session}} = await sb.auth.getSession();
+  if(!session){return;}
+  STATE.session=session;
+  try{
+    let {data:profile} = await sb.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+    if(!profile){ toast(LANG==='ar'?'جاري تجهيز حسابك...':'Setting up your account...'); await new Promise(r=>setTimeout(r,1200)); ({data:profile} = await sb.from('profiles').select('*').eq('id', session.user.id).maybeSingle()); }
+    STATE.profile=profile; STATE.isLeader = profile?.role==='leader';
+
+    const [dep,ward,drg,rf,pt,pc,es,sv] = await Promise.all([
+      sb.from('departments').select('*').order('sort_order'),
+      sb.from('wards').select('*'),
+      sb.from('drugs').select('id,name').order('name'),
+      sb.from('reference_sources').select('id,name').order('name'),
+      sb.from('problem_types').select('id,label').order('label'),
+      sb.from('possible_causes').select('id,label').order('label'),
+      sb.from('error_stages').select('id,label').order('label'),
+      sb.from('severity_levels').select('id,label').order('label'),
+    ]);
+    STATE.departments=dep.data||[]; STATE.wards=ward.data||[]; STATE.drugs=drg.data||[];
+    STATE.refs=rf.data||[]; STATE.problemTypes=pt.data||[]; STATE.causes=pc.data||[];
+    STATE.stages=es.data||[]; STATE.severities=sv.data||[];
+  }catch(err){
+    console.error('bootApp data load failed:', err);
+    toast(LANG==='ar'?'حدث خطأ أثناء تحميل البيانات، بعض الأقسام قد لا تعمل':'Error loading data, some sections may not work');
+  }
+
+  document.getElementById('auth-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  try{
+    applyLang();
+    renderSidebar();
+    refreshUserChip();
+    $('#btn-add-leader-top').style.display = STATE.isLeader ? 'inline-flex' : 'none';
+    goto('home');
+  }catch(err){
+    console.error('bootApp render failed:', err);
+    toast(LANG==='ar'?'حدث خطأ أثناء عرض الواجهة':'Error rendering the interface');
+  }
+}
+(async()=>{ const {data:{session}} = await sb.auth.getSession(); if(session){ await bootApp(); } })();
+
+function refreshUserChip(){
+  $('#user-name').textContent = STATE.profile?.full_name || STATE.session.user.email;
+  $('#user-av').textContent = initials(STATE.profile?.full_name);
+  $('#user-role').innerHTML = `<span class="badge-role ${STATE.isLeader?'leader':''}">${STATE.isLeader?(LANG==='ar'?'قائد القسم':'Leader'):(LANG==='ar'?'صيدلي':'Pharmacist')}</span>`;
+}
+
+/* ============================================================ THEME TOGGLE */
+let THEME = localStorage.getItem('theme') || 'light';
+function applyTheme(){
+  document.getElementById('html-root').setAttribute('data-theme', THEME);
+  $('#btn-theme').textContent = THEME==='light' ? '🌙' : '☀️';
+  localStorage.setItem('theme', THEME);
+}
+$('#btn-theme').onclick=()=>{ THEME = THEME==='light' ? 'dark' : 'light'; applyTheme(); renderView(); };
+applyTheme();
+
+/* ============================================================ LANG TOGGLE */
+$('#btn-lang').onclick=()=>{ LANG = LANG==='ar' ? 'en' : 'ar'; applyLang(); renderSidebar(); refreshUserChip(); renderView(); };
+function applyLang(){
+  const html=document.getElementById('html-root');
+  html.setAttribute('lang', LANG); html.setAttribute('dir', LANG==='ar'?'rtl':'ltr');
+  $('#btn-lang').textContent = LANG==='ar' ? 'EN' : 'AR';
+  $('#t-brand').textContent=t('brand'); $('#t-authsub').textContent=t('authsub');
+  $('#t-logout').textContent=t('logout'); $('#t-newiv').textContent=t('newiv'); $('#t-addleader').textContent=t('manage_leaders');
+  $('#tab-login').textContent = LANG==='ar'?'تسجيل الدخول':'Login';
+  $('#tab-register').textContent = LANG==='ar'?'حساب جديد':'Register';
+  $('#btn-forgot').textContent = LANG==='ar'?'نسيت كلمة المرور؟':'Forgot password?';
+  $('#btn-back-login').textContent = LANG==='ar'?'→ رجوع لتسجيل الدخول':'→ Back to login';
+  $('#t-forgot-sub').textContent = LANG==='ar'?'أدخل بريدك الإلكتروني وسنرسل لك رابط إعادة تعيين كلمة المرور':'Enter your email and we will send you a password reset link';
+  loadDeptsIntoSelect();
+}
+
+/* ============================================================ SIDEBAR / NAV */
+function renderSidebar(){
+  const nav=$('#nav');
+  nav.innerHTML = NAV_ITEMS.map(it=>`<button class="nav-item" data-view="${it.id}">${it.icon()}<span>${t(it.key)}</span></button>`).join('');
+  $$('.nav-item[data-view]').forEach(b=>b.onclick=()=>goto(b.dataset.view));
+  $('#brand-txt').innerHTML = `${t('brand')}<small>Clinical Pharmacy</small>`;
+  setActiveNav();
+}
+function setActiveNav(){
+  $$('.nav-item[data-view]').forEach(b=>b.classList.toggle('active', b.dataset.view===STATE.view));
+  const item = NAV_ITEMS.find(i=>i.id===STATE.view);
+  $('#topbar-title').textContent = item ? t(item.key) : '';
+}
+$('#btn-hamburger').onclick=()=>{ $('#sidebar').classList.toggle('open'); $('#sidebar-backdrop').classList.toggle('show'); };
+$('#sidebar-backdrop').onclick=()=>{ $('#sidebar').classList.remove('open'); $('#sidebar-backdrop').classList.remove('show'); };
+$('#user-chip').onclick=openAccountModal;
+
+function goto(view){
+  STATE.view=view; STATE.deptDetail=null; STATE.pharmDetail=null;
+  setActiveNav(); $('#sidebar').classList.remove('open'); $('#sidebar-backdrop').classList.remove('show');
+  renderView();
+}
+function renderView(){
+  const c=$('#content'); c.innerHTML=`<div class="loader">${LANG==='ar'?'جاري التحميل...':'Loading...'}</div>`;
+  if(STATE.view==='home') return renderHome();
+  if(STATE.view==='departments') return renderDepartments();
+  if(STATE.view==='kpis') return renderKPIs();
+  if(STATE.view==='antibiotics') return renderAntibiotics();
+  if(STATE.view==='policies') return renderPolicies();
+  if(STATE.view==='notes') return renderNotes();
+  if(STATE.view==='calendar') return renderCalendar();
+}
+
+/* ============================================================ FILTER BAR (day/month/year) */
+function filterBarHtml(){
+  const years=[]; const cy=new Date().getFullYear(); for(let y=cy+1;y>=cy-4;y--) years.push(y);
+  const months=[t('all'),...(LANG==='ar'?['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'])];
+  return `
+  <div class="filter-bar">
+    <span class="flabel">${t('filter_year')}</span>
+    <select id="f-year">${years.map(y=>`<option value="${y}" ${STATE.filter.year==y?'selected':''}>${y}</option>`).join('')}</select>
+    <span class="flabel">${t('filter_month')}</span>
+    <select id="f-month"><option value="">${t('all')}</option>${months.slice(1).map((m,i)=>`<option value="${i+1}" ${STATE.filter.month==(i+1)?'selected':''}>${m}</option>`).join('')}</select>
+    <span class="flabel">${t('filter_day')}</span>
+    <select id="f-day"><option value="">${t('all')}</option>${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}" ${STATE.filter.day==d?'selected':''}>${d}</option>`).join('')}</select>
+  </div>`;
+}
+function bindFilterBar(cb){
+  $('#f-year').onchange=(e)=>{STATE.filter.year=parseInt(e.target.value); cb();};
+  $('#f-month').onchange=(e)=>{STATE.filter.month=e.target.value; STATE.filter.day=''; cb();};
+  $('#f-day').onchange=(e)=>{STATE.filter.day=e.target.value; cb();};
+}
+function getRange(f){
+  const year=f.year||new Date().getFullYear();
+  if(f.day && f.month){ const d=`${year}-${pad(f.month)}-${pad(f.day)}`; return {start:d,end:d}; }
+  if(f.month){ const last=new Date(year,f.month,0).getDate(); return {start:`${year}-${pad(f.month)}-01`, end:`${year}-${pad(f.month)}-${pad(last)}`}; }
+  return {start:`${year}-01-01`, end:`${year}-12-31`};
+}
+
+/* ============================================================ HOME */
+async function renderHome(){
+  const c=$('#content');
+  const now=new Date();
+  const monthStart=new Date(now.getFullYear(), now.getMonth(),1).toISOString().slice(0,10);
+  const monthEnd=new Date(now.getFullYear(), now.getMonth()+1,0).toISOString().slice(0,10);
+
+  const [{data:monthRows}, {data:allTimeRows}, {data:events}, {data:roster}] = await Promise.all([
+    sb.from('interventions').select('id,is_dtp,is_medication_error,department_id,intervention_date,physician_acceptance,main_drug_generic,roster(full_name)').gte('intervention_date',monthStart).lte('intervention_date',monthEnd).order('intervention_date',{ascending:false}),
+    sb.from('interventions').select('id,intervention_date,department_id,physician_acceptance').gte('intervention_date', new Date(now.getFullYear(),now.getMonth()-5,1).toISOString().slice(0,10)),
+    sb.from('calendar_events').select('*').gte('event_date', new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10)).order('event_date').limit(40),
+    sb.from('roster').select('id').eq('active',true),
+  ]);
+  const rows=monthRows||[];
+  const total=rows.length, dtp=rows.filter(r=>r.is_dtp).length, me=rows.filter(r=>r.is_medication_error).length;
+  const accept=rows.filter(r=>r.physician_acceptance==='Accept').length, reject=rows.filter(r=>r.physician_acceptance==='reject').length;
+
+  const byDept={}; rows.forEach(r=>{byDept[r.department_id]=(byDept[r.department_id]||0)+1;});
+  const topDepts=Object.entries(byDept).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([id,count])=>({dept:STATE.departments.find(d=>d.id===id), count}));
+  const maxTop = Math.max(1, ...topDepts.map(t=>t.count));
+
+  const monthNamesShort = LANG==='ar' ? ['ينا','فبر','مار','أبر','ماي','يون','يول','أغس','سبت','أكت','نوف','ديس'] : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const trendBuckets=[]; for(let i=5;i>=0;i--){ const dt=new Date(now.getFullYear(),now.getMonth()-i,1); trendBuckets.push({y:dt.getFullYear(),m:dt.getMonth(),count:0}); }
+  (allTimeRows||[]).forEach(r=>{ const d=new Date(r.intervention_date); const b=trendBuckets.find(x=>x.y===d.getFullYear()&&x.m===d.getMonth()); if(b) b.count++; });
+
+  c.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+      <div><h2 class="page-title">${t('welcome')} ${esc(STATE.profile?.full_name||'')} 👋</h2><p class="page-sub" style="margin:0;">${t('overview')} — ${now.toLocaleDateString(LANG==='ar'?'ar-EG':'en-US',{month:'long',year:'numeric'})}</p></div>
+      <div class="frost" style="display:flex;align-items:center;gap:8px;border-radius:12px;padding:9px 14px;min-width:220px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0;"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="${LANG==='ar'?'بحث...':'Search...'}" style="border:none;background:transparent;outline:none;font-family:inherit;font-size:13px;color:var(--navy);width:100%;">
+      </div>
+    </div>
+
+    <div class="grid cols-4" style="margin-bottom:18px;">
+      <div class="stat-card" style="cursor:pointer;" onclick="openMonthInterventionsModal()"><div class="ic">${iChart()}</div><div><div class="num">${total}</div><div class="lbl">${t('total_iv')}</div></div></div>
+      <div class="stat-card"><div class="ic" style="background:var(--gold-bg);color:var(--gold-ic);">${iPill()}</div><div><div class="num">${dtp}</div><div class="lbl">${t('total_dtp')}</div></div></div>
+      <div class="stat-card"><div class="ic" style="background:var(--coral-bg);color:var(--coral-ic);">${iPill()}</div><div><div class="num">${me}</div><div class="lbl">${t('total_me')}</div></div></div>
+      <div class="stat-card" style="cursor:pointer;" onclick="goto('departments')"><div class="ic" style="background:var(--blue-bg);color:var(--blue-ic);">${iDept()}</div><div><div class="num">${STATE.departments.length}</div><div class="lbl">${t('total_depts')}</div></div></div>
+    </div>
+
+    <div class="grid cols-2b" style="margin-bottom:18px;align-items:start;">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div class="section-title" style="margin:0;">${LANG==='ar'?'أحدث التداخلات':'Recent Interventions'}</div>
+          <button class="btn-outline" onclick="openMonthInterventionsModal()">${LANG==='ar'?'عرض الكل':'View all'}</button>
+        </div>
+        ${rows.length? `<table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+          <thead><tr style="text-align:${LANG==='ar'?'right':'left'};color:var(--muted);">
+            <th style="padding:7px 6px;font-weight:700;">${LANG==='ar'?'التاريخ':'Date'}</th>
+            <th style="padding:7px 6px;font-weight:700;">${LANG==='ar'?'القسم':'Dept'}</th>
+            <th style="padding:7px 6px;font-weight:700;">${LANG==='ar'?'الصيدلي':'Pharmacist'}</th>
+            <th style="padding:7px 6px;font-weight:700;">${LANG==='ar'?'الدواء':'Drug'}</th>
+            <th style="padding:7px 6px;font-weight:700;">${LANG==='ar'?'الحالة':'Status'}</th>
+          </tr></thead>
+          <tbody>${rows.slice(0,6).map(r=>`<tr style="border-top:1px solid var(--card-border);">
+            <td style="padding:8px 6px;">${r.intervention_date}</td>
+            <td style="padding:8px 6px;">${esc(deptName(STATE.departments.find(d=>d.id===r.department_id)))}</td>
+            <td style="padding:8px 6px;">${esc(r.roster?.full_name||'—')}</td>
+            <td style="padding:8px 6px;">${esc(r.main_drug_generic||'—')}</td>
+            <td style="padding:8px 6px;">${r.is_medication_error? `<span class="pill warn">${LANG==='ar'?'خطأ':'Error'}</span>` : r.is_dtp? `<span class="pill">DTP</span>` : `<span class="pill muted">${LANG==='ar'?'عادي':'Normal'}</span>`}</td>
+          </tr>`).join('')}</tbody>
+        </table>` : `<div class="empty-state" style="padding:24px;"><div class="ic">📭</div>${LANG==='ar'?'لا توجد تداخلات هذا الشهر':'No interventions this month'}</div>`}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="card" style="display:flex;align-items:center;gap:12px;padding:14px 18px;">
+          <div class="ic" style="background:var(--mint-bg);color:var(--mint-ic);width:44px;height:44px;flex-shrink:0;">${iUsers()}</div>
+          <div><div style="font-size:20px;font-weight:800;">${(roster||[]).length}</div><div style="font-size:11.5px;color:var(--muted);font-weight:700;">${t('pharmacists')}</div></div>
+        </div>
+        <div class="clock-card" id="home-clock"></div>
+        <div class="mini-cal-card" id="home-cal"></div>
+      </div>
+    </div>
+
+    <div class="section-title">${LANG==='ar'?'نظرة تحليلية':'Analytics Overview'}</div>
+    <div class="grid cols-3">
+      <div class="card">
+        <div class="section-title">${t('trend')} <span style="color:var(--muted);font-weight:600;">(${t('last6')})</span></div>
+        <canvas id="home-trend" height="150"></canvas>
+      </div>
+      <div class="card">
+        <div class="section-title">${t('top_depts')}</div>
+        <canvas id="home-depts" height="150"></canvas>
+      </div>
+      <div class="card">
+        <div class="section-title">${t('accept_rate')}</div>
+        <canvas id="home-pie" height="150"></canvas>
+      </div>
+    </div>
+  `;
+  startClock($('#home-clock'));
+
+  setChartDefaults(); const CP=chartPalette();
+  new Chart($('#home-pie'),{type:'doughnut', data:{labels:[LANG==='ar'?'قبول':'Accepted', LANG==='ar'?'رفض':'Rejected'], datasets:[{data:[accept,reject], backgroundColor:[CP.mint,CP.coral], borderWidth:0}]}, options:{plugins:{legend:{position:'bottom', labels:{boxWidth:10,font:{size:11}}}}}});
+  new Chart($('#home-trend'),{type:'line', data:{labels:trendBuckets.map(b=>monthNamesShort[b.m]), datasets:[{label:t('total_iv'), data:trendBuckets.map(b=>b.count), borderColor:CP.teal2, backgroundColor:THEME==='dark'?'rgba(151,202,219,.18)':'rgba(1,138,190,.14)', fill:true, tension:.4, pointBackgroundColor:CP.navy}]}, options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+  new Chart($('#home-depts'),{type:'bar', data:{labels:topDepts.map(d=>deptName(d.dept)), datasets:[{label:t('total_iv'), data:topDepts.map(d=>d.count), backgroundColor:CP.teal, borderRadius:5}]}, options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+
+  renderMiniCalendar($('#home-cal'), events||[]);
+}
+
+let CLOCK_INTERVAL=null;
+function startClock(el){
+  if(CLOCK_INTERVAL) clearInterval(CLOCK_INTERVAL);
+  el.innerHTML=`
+    <div class="clock-face" id="clock-face">
+      <div class="clock-hand hour" id="ch-hour"></div>
+      <div class="clock-hand minute" id="ch-min"></div>
+      <div class="clock-hand second" id="ch-sec"></div>
+      <div class="clock-center"></div>
+    </div>
+    <div class="clock-digital"><b id="clock-time">--:--</b><span id="clock-date">-</span></div>
+  `;
+  function tick(){
+    const now=new Date();
+    const h=now.getHours()%12, m=now.getMinutes(), s=now.getSeconds();
+    const hourEl=document.getElementById('ch-hour'), minEl=document.getElementById('ch-min'), secEl=document.getElementById('ch-sec');
+    if(!hourEl) { clearInterval(CLOCK_INTERVAL); return; }
+    hourEl.style.transform = `rotate(${h*30+m*0.5}deg)`;
+    minEl.style.transform = `rotate(${m*6}deg)`;
+    secEl.style.transform = `rotate(${s*6}deg)`;
+    const timeEl=document.getElementById('clock-time'), dateEl=document.getElementById('clock-date');
+    if(timeEl) timeEl.textContent = now.toLocaleTimeString(LANG==='ar'?'ar-EG':'en-US',{hour:'2-digit',minute:'2-digit'});
+    if(dateEl) dateEl.textContent = now.toLocaleDateString(LANG==='ar'?'ar-EG':'en-US',{weekday:'short', day:'numeric', month:'short'});
+  }
+  tick();
+  CLOCK_INTERVAL=setInterval(tick,1000);
+}
+
+function renderMiniCalendar(el, events){
+  const now=new Date();
+  const y=now.getFullYear(), m=now.getMonth();
+  const first=new Date(y,m,1); const startOffset=first.getDay(); const daysInMonth=new Date(y,m+1,0).getDate();
+  const evDays=new Set((events||[]).map(e=>new Date(e.event_date).getDate()).filter((_,i)=>true));
+  const evByDate={}; (events||[]).forEach(e=>{const d=new Date(e.event_date); if(d.getMonth()===m) evByDate[d.getDate()]=true;});
+  const dowAr=['أ','ن','ث','ر','خ','ج','س']; const dowEn=['S','M','T','W','T','F','S'];
+  let cells='';
+  for(let i=0;i<startOffset;i++) cells+=`<div class="d blank">.</div>`;
+  for(let d=1; d<=daysInMonth; d++){
+    const isToday = d===now.getDate();
+    cells+=`<div class="d ${isToday?'today':''} ${evByDate[d]?'has':''}">${d}</div>`;
+  }
+  el.innerHTML=`
+    <div class="mini-cal-title"><b>${t('calendar_card')}</b><span class="pill muted">${now.toLocaleDateString(LANG==='ar'?'ar-EG':'en-US',{month:'long'})}</span></div>
+    <div class="mini-cal">
+      ${(LANG==='ar'?dowAr:dowEn).map(d=>`<div class="h">${d}</div>`).join('')}
+      ${cells}
+    </div>
+    <button class="btn-ghost" style="width:100%;margin-top:14px;" onclick="goto('calendar')">${t('nav_calendar')} →</button>
+  `;
+}
+
+/* ============================================================ DEPARTMENTS */
+async function renderDepartments(){
+  if(STATE.pharmDetail) return renderPharmDetail();
+  if(STATE.deptDetail) return renderDeptDetail();
+
+  const c=$('#content');
+  const {start,end} = getRange(STATE.filter);
+  const {data:rows} = await sb.from('interventions').select('department_id').gte('intervention_date',start).lte('intervention_date',end);
+  const counts={}; (rows||[]).forEach(r=>counts[r.department_id]=(counts[r.department_id]||0)+1);
+
+  c.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;">
+      <div><h2 class="page-title">${t('departments')}</h2><p class="page-sub">${t('choose_dept')}</p></div>
+    </div>
+    ${filterBarHtml()}
+    <div class="grid cols-3">
+      ${STATE.departments.map(d=>`
+        <div class="dep-card" data-id="${d.id}">
+          <div class="name">${esc(deptName(d))}</div>
+          <div class="sub">${esc(d.name_en||'')}</div>
+          <div class="count">${counts[d.id]||0}<span style="font-size:12px;color:var(--muted);font-weight:700;"> ${t('month_iv')}</span></div>
+        </div>`).join('')}
+      ${STATE.isLeader? `<div class="add-dep-card" id="add-dept-card"><div style="font-size:26px;">＋</div>${t('add_dept')}</div>` : ''}
+    </div>
+  `;
+  bindFilterBar(renderDepartments);
+  $$('.dep-card').forEach(el=>el.onclick=()=>{STATE.deptDetail=el.dataset.id; renderView();});
+  if(STATE.isLeader) $('#add-dept-card').onclick=openAddDeptModal;
+}
+
+function openAddDeptModal(){
+  const overlay=document.createElement('div'); overlay.className='modal-overlay';
+  overlay.innerHTML=`
+    <div class="modal modal-pos">
+      <button class="btn-outline close" style="position:absolute;left:18px;top:18px;">✕</button>
+      <h3>${t('add_dept')}</h3>
+      <div class="field"><label>${LANG==='ar'?'رمز القسم':'Code'}</label><input type="text" id="nd-code"></div>
+      <div class="field"><label>${LANG==='ar'?'اسم القسم (عربي)':'Name (Arabic)'}</label><input type="text" id="nd-ar"></div>
+      <div class="field"><label>${LANG==='ar'?'اسم القسم (إنجليزي)':'Name (English)'}</label><input type="text" id="nd-en"></div>
+      <button class="btn-primary" id="nd-save">${t('save')}</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close').onclick=()=>overlay.remove();
+  overlay.onclick=(e)=>{if(e.target===overlay)overlay.remove();};
+  overlay.querySelector('#nd-save').onclick=async()=>{
+    const code=$('#nd-code',overlay).value.trim(), ar=$('#nd-ar',overlay).value.trim(), en=$('#nd-en',overlay).value.trim();
+    if(!ar&&!en){toast(LANG==='ar'?'اكتب اسم القسم':'Enter a department name');return;}
+    const {data,error} = await sb.from('departments').insert({code:code||null, name_ar:ar||en, name_en:en||ar, sort_order:STATE.departments.length+1}).select().single();
+    if(error){toast(LANG==='ar'?'تعذر إضافة القسم':'Could not add department');console.error(error);return;}
+    STATE.departments.push(data);
+    overlay.remove(); toast(LANG==='ar'?'تمت إضافة القسم':'Department added'); renderView();
+  };
+}
+
+async function renderDeptDetail(){
+  const c=$('#content');
+  const dept = STATE.departments.find(d=>d.id===STATE.deptDetail);
+  const {start,end} = getRange(STATE.filter);
+
+  const [{data:rangeRows}, {data:roster}] = await Promise.all([
+    sb.from('interventions').select('id,is_dtp,is_medication_error,physician_acceptance,roster_id').eq('department_id', dept.id).gte('intervention_date', start).lte('intervention_date', end),
+    sb.from('roster').select('id,full_name').eq('department_id', dept.id).eq('active', true).order('full_name'),
+  ]);
+  const rows=rangeRows||[];
+  const total=rows.length, dtp=rows.filter(r=>r.is_dtp).length, me=rows.filter(r=>r.is_medication_error).length;
+  const accepted=rows.filter(r=>r.physician_acceptance==='Accept').length;
+  const accRate = total? Math.round(accepted/total*100) : 0;
+  const countByRoster={}; rows.forEach(r=>{if(r.roster_id) countByRoster[r.roster_id]=(countByRoster[r.roster_id]||0)+1;});
+
+  c.innerHTML=`
+    <button class="back-link" onclick="STATE.deptDetail=null; renderView();">→ ${t('back_depts')}</button>
+    <h2 class="page-title">${esc(deptName(dept))}</h2>
+    ${filterBarHtml()}
+    <div class="grid cols-4" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="ic">${iChart()}</div><div><div class="num">${total}</div><div class="lbl">${t('total_iv')}</div></div></div>
+      <div class="stat-card"><div class="ic" style="background:var(--gold-bg);color:var(--gold-ic);">${iPill()}</div><div><div class="num">${dtp}</div><div class="lbl">DTP</div></div></div>
+      <div class="stat-card"><div class="ic" style="background:var(--coral-bg);color:var(--coral-ic);">${iPill()}</div><div><div class="num">${me}</div><div class="lbl">${t('total_me')}</div></div></div>
+      <div class="stat-card"><div class="ic" style="background:var(--blue-bg);color:var(--blue-ic);">${iUsers()}</div><div><div class="num">${accRate}%</div><div class="lbl">${t('accept_rate')}</div></div></div>
+    </div>
+    <div class="card">
+      <div class="section-title">👥 ${t('dept_pharms')} (${(roster||[]).length})</div>
+      ${roster&&roster.length? roster.map(p=>`
+        <div class="pharm-row" data-id="${p.id}" data-name="${esc(p.full_name)}">
+          <div class="av">${initials(p.full_name)}</div>
+          <div style="flex:1;"><b style="font-size:14px;">${esc(p.full_name)}</b></div>
+          <span class="pill">${countByRoster[p.id]||0}</span>
+        </div>`).join('') : `<div class="empty-state"><div class="ic">👤</div>${LANG==='ar'?'لا يوجد صيادلة مسجلين في هذا القسم بعد':'No pharmacists registered in this department yet'}</div>`}
+    </div>
+  `;
+  bindFilterBar(()=>renderView());
+  $$('.pharm-row').forEach(el=>el.onclick=()=>{STATE.pharmDetail={id:el.dataset.id, name:el.dataset.name}; renderView();});
+}
+
+async function renderPharmDetail(){
+  const c=$('#content');
+  const p=STATE.pharmDetail;
+  const year = STATE.filter.year || new Date().getFullYear();
+  const yearStart=`${year}-01-01`, yearEnd=`${year}-12-31`;
+  const {data:rows} = await sb.from('interventions').select('intervention_date,is_dtp,is_medication_error').eq('roster_id', p.id).gte('intervention_date', yearStart).lte('intervention_date',yearEnd);
+  const all=rows||[];
+  const byMonth = Array.from({length:12},(_,i)=>({m:i,total:0,dtp:0,me:0}));
+  all.forEach(r=>{const m=new Date(r.intervention_date).getMonth(); byMonth[m].total++; if(r.is_dtp)byMonth[m].dtp++; if(r.is_medication_error)byMonth[m].me++;});
+  const monthNames= LANG==='ar' ? ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'] : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const now=new Date(); const thisMonth=byMonth[now.getMonth()]||{total:0};
+
+  c.innerHTML=`
+    <button class="back-link" onclick="STATE.pharmDetail=null; renderView();">→ ${t('back_dept')}</button>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
+      <div class="av" style="width:46px;height:46px;font-size:16px;border-radius:14px;">${initials(p.name)}</div>
+      <div><h2 class="page-title" style="margin:0;">${esc(p.name)}</h2><p class="page-sub" style="margin:2px 0 0;">${year}</p></div>
+    </div>
+    ${filterBarHtml()}
+    <div class="grid cols-3" style="margin:18px 0;">
+      <div class="stat-card"><div><div class="num">${all.length}</div><div class="lbl">${t('total_iv')} (${year})</div></div></div>
+      <div class="stat-card"><div><div class="num">${thisMonth.total}</div><div class="lbl">${monthNames[now.getMonth()]}</div></div></div>
+      <div class="stat-card"><div><div class="num">${all.filter(r=>r.is_medication_error).length}</div><div class="lbl">${t('total_me')} (${year})</div></div></div>
+    </div>
+    <div class="card"><div class="section-title">📈 ${LANG==='ar'?'الأداء الشهري خلال العام':'Monthly performance'}</div><canvas id="pharm-chart" height="90"></canvas></div>
+  `;
+  bindFilterBar(()=>renderView());
+  setChartDefaults(); const CP=chartPalette();
+  new Chart($('#pharm-chart'),{type:'bar', data:{labels:monthNames, datasets:[
+    {label:t('total_iv'), data:byMonth.map(x=>x.total), backgroundColor:CP.teal2},
+    {label:'DTP', data:byMonth.map(x=>x.dtp), backgroundColor:CP.mint},
+    {label:t('total_me'), data:byMonth.map(x=>x.me), backgroundColor:CP.coral},
+  ]}, options:{plugins:{legend:{position:'bottom'}}, scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+}
+
+/* ============================================================ KPIs */
+async function renderKPIs(){
+  const c=$('#content');
+  STATE.kpiTab = STATE.kpiTab || 'dept';
+  c.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+      <div><h2 class="page-title">${t('kpis')}</h2><p class="page-sub">${t('kpis_sub')} ${STATE.isLeader?'':`<span class="pill muted">${t('view_only')}</span>`}</p></div>
+    </div>
+    <div class="tabbar" style="max-width:620px;margin-bottom:18px;">
+      <button id="kpi-tab-dept" class="${STATE.kpiTab==='dept'?'active':''}">${t('kpi_dept_card')}</button>
+      <button id="kpi-tab-hosp" class="${STATE.kpiTab==='hosp'?'active':''}">${t('kpi_hosp_card')}</button>
+      <button id="kpi-tab-ivk" class="${STATE.kpiTab==='ivk'?'active':''}">${t('kpi_ivk_card')}</button>
+    </div>
+    <div id="kpi-tab-body"></div>
+  `;
+  $('#kpi-tab-dept').onclick=()=>{STATE.kpiTab='dept'; renderKPIs();};
+  $('#kpi-tab-hosp').onclick=()=>{STATE.kpiTab='hosp'; renderKPIs();};
+  $('#kpi-tab-ivk').onclick=()=>{STATE.kpiTab='ivk'; renderKPIs();};
+  if(STATE.kpiTab==='ivk') return renderInterventionKPI($('#kpi-tab-body'));
+  if(STATE.kpiTab==='hosp') return renderHospitalKPI($('#kpi-tab-body'));
+  return renderDeptKPI($('#kpi-tab-body'));
+}
+
+async function renderDeptKPI(c){
+  const {start,end} = getRange(STATE.filter);
+  const {data:rows} = await sb.from('interventions').select('is_dtp,is_medication_error,physician_acceptance,reference_used,error_stage,roster_id,roster(full_name)').gte('intervention_date',start).lte('intervention_date',end);
+  const all=rows||[];
+  const total=all.length, dtp=all.filter(r=>r.is_dtp).length, me=all.filter(r=>r.is_medication_error).length;
+  const accept=all.filter(r=>r.physician_acceptance==='Accept').length, reject=all.filter(r=>r.physician_acceptance==='reject').length;
+  const byPharm={}; all.forEach(r=>{const n=r.roster?.full_name; if(n) byPharm[n]=(byPharm[n]||0)+1;});
+  const pharmSorted=Object.entries(byPharm).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const byRef={}; all.forEach(r=>{if(r.reference_used) byRef[r.reference_used]=(byRef[r.reference_used]||0)+1;});
+  const refSorted=Object.entries(byRef).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const byStage={}; all.forEach(r=>{if(r.error_stage) byStage[r.error_stage]=(byStage[r.error_stage]||0)+1;});
+  const stageOrder=['Ordering decision','Ordering Process','Preparation','Storage','Transcribing','Dispensing','Administration','Monitoring'];
+  const stageLabels = stageOrder.filter(s=>byStage[s]!==undefined).length ? stageOrder : Object.keys(byStage);
+
+  c.innerHTML=`
+    <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+      ${STATE.isLeader? `<button class="btn-primary" id="kpi-export" style="width:auto;">⬇ ${t('export_excel')}</button>` : ''}
+    </div>
+    ${filterBarHtml()}
+    <div class="grid cols-4" style="margin-bottom:20px;">
+      <div class="stat-card"><div><div class="num">${total}</div><div class="lbl">${t('total_iv')}</div></div></div>
+      <div class="stat-card"><div><div class="num">${dtp}</div><div class="lbl">DTP</div></div></div>
+      <div class="stat-card"><div><div class="num">${me}</div><div class="lbl">${t('total_me')}</div></div></div>
+      <div class="stat-card"><div><div class="num">${total? Math.round(accept/((accept+reject)||1)*100):0}%</div><div class="lbl">${t('accept_rate')}</div></div></div>
+    </div>
+    <div class="grid cols-2" style="margin-bottom:16px;">
+      <div class="card"><div class="section-title">Figure 1 — Acceptance</div><canvas id="k-accept"></canvas></div>
+      <div class="card"><div class="section-title">Figure 2 — ${LANG==='ar'?'التقارير حسب الصيدلي':'Reports per pharmacist'}</div><canvas id="k-pharm"></canvas></div>
+    </div>
+    <div class="grid cols-2">
+      <div class="card"><div class="section-title">Figure 3 — ${LANG==='ar'?'المراجع المستخدمة':'References used'}</div><canvas id="k-refs"></canvas></div>
+      <div class="card"><div class="section-title">${LANG==='ar'?'الأخطاء حسب المرحلة':'Errors by stage'}</div><canvas id="k-stage"></canvas></div>
+    </div>
+  `;
+  bindFilterBar(renderKPIs);
+  setChartDefaults(); const CP=chartPalette();
+  new Chart($('#k-accept'),{type:'doughnut', data:{labels:[LANG==='ar'?'قبول':'Accepted', LANG==='ar'?'رفض':'Rejected'], datasets:[{data:[accept,reject], backgroundColor:[CP.mint,CP.coral]}]}, options:{plugins:{legend:{position:'bottom'}}}});
+  new Chart($('#k-pharm'),{type:'bar', data:{labels:pharmSorted.map(p=>p[0]), datasets:[{data:pharmSorted.map(p=>p[1]), backgroundColor:CP.teal}]}, options:{indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true,ticks:{precision:0}}}}});
+  new Chart($('#k-refs'),{type:'bar', data:{labels:refSorted.map(r=>r[0]), datasets:[{data:refSorted.map(r=>r[1]), backgroundColor:CP.navy}]}, options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+  new Chart($('#k-stage'),{type:'bar', data:{labels:stageLabels, datasets:[{data:stageLabels.map(s=>byStage[s]||0), backgroundColor:CP.coral}]}, options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+  if(STATE.isLeader) $('#kpi-export').onclick=()=>exportKPIsExcel(start,end);
+}
+
+/* ============================================================ INTERVENTION KPI (per pharmacist, inside their department) */
+function localISO(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function ivkPct(part,total){ return total>0 ? Math.round(part/total*1000)/10 : 0; }
+function ivkNum(v){ const n=parseInt(v,10); return Number.isFinite(n)&&n>0 ? n : 0; }
+function ivkSum(list){ return list.reduce((s,r)=>({old:s.old+r.old,nw:s.nw+r.nw,iv:s.iv+r.iv,acc:s.acc+r.acc,rej:s.rej+r.rej}),{old:0,nw:0,iv:0,acc:0,rej:0}); }
+function ivkTableMissing(err){ return !!err && /schema cache|does not exist|42P01|PGRST205/i.test((err.code||'')+' '+(err.message||'')); }
+
+/* One row per (department, pharmacist): every active pharmacist is listed even with zero entries */
+function buildIvkRows(roster, entries){
+  const map=new Map();
+  const get=(deptId,rosterId,name)=>{
+    const k=deptId+'|'+rosterId;
+    if(!map.has(k)) map.set(k,{department_id:deptId, roster_id:rosterId, name:name||'—', old:0, nw:0, iv:0, acc:0, rej:0});
+    return map.get(k);
+  };
+  (roster||[]).filter(p=>p.department_id).forEach(p=>get(p.department_id,p.id,p.full_name));
+  (entries||[]).forEach(e=>{
+    const r=get(e.department_id,e.roster_id,e.roster?.full_name);
+    r.old+=e.old_cases||0; r.nw+=e.new_cases||0; r.iv+=e.interventions_count||0; r.acc+=e.accepted_count||0; r.rej+=e.rejected_count||0;
+  });
+  const order=new Map(STATE.departments.map((d,i)=>[d.id,i]));
+  return [...map.values()].sort((a,b)=>((order.get(a.department_id)??999)-(order.get(b.department_id)??999)) || a.name.localeCompare(b.name,'ar'));
+}
+
+async function renderInterventionKPI(c){
+  const {start,end}=getRange(STATE.filter);
+  const myDept=STATE.profile?.department_id||null;
+  const scoped=!STATE.isLeader && myDept;
+  let qr=sb.from('roster').select('id,full_name,department_id').eq('active',true).order('full_name');
+  let qe=sb.from('intervention_kpi_entries').select('*, roster(full_name)').gte('entry_date',start).lte('entry_date',end);
+  if(scoped){ qr=qr.eq('department_id',myDept); qe=qe.eq('department_id',myDept); }
+  const [{data:roster},{data:entries,error:eErr}]=await Promise.all([qr,qe]);
+  if(eErr){
+    console.error(eErr);
+    c.innerHTML=`<div class="card empty-state"><div class="ic">⚙️</div>${ivkTableMissing(eErr)
+      ? L('جدول مؤشر Intervention لم يُنشأ بعد في قاعدة البيانات. شغّل ملف الإعداد (SQL) مرة واحدة ثم أعد تحميل الصفحة.','The Intervention table has not been created in the database yet. Run the setup SQL once, then reload the page.')
+      : L('تعذر تحميل البيانات، حاول مرة أخرى.','Could not load the data, please try again.')}</div>`;
+    return;
+  }
+  const rows=buildIvkRows(roster,entries);
+  const tot=ivkSum(rows);
+  const groups=STATE.departments.map(d=>({dept:d,list:rows.filter(r=>r.department_id===d.id)})).filter(g=>g.list.length);
+  const th='padding:7px 8px;font-weight:700;white-space:nowrap;';
+  const td='padding:8px;white-space:nowrap;';
+  const al=LANG==='ar'?'right':'left';
+
+  c.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
+      <p class="page-sub" style="margin:0;">${L('أرقام كل صيدلي ضمن قسمه، وتتجمع حسب الفترة المختارة','Each pharmacist figures within their department, totals follow the selected period')}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-green" id="ivk-add">＋ ${L('إضافة جديد','Add new')}</button>
+        <button class="btn-ghost" id="ivk-edit">✎ ${L('تعديل','Edit')}</button>
+        ${STATE.isLeader?`<button class="btn-primary" id="ivk-export" style="width:auto;">⬇ ${t('export_excel')}</button>`:''}
+      </div>
+    </div>
+    ${filterBarHtml()}
+    <div class="grid cols-4" style="margin-bottom:18px;">
+      <div class="stat-card"><div class="ic">${iChart()}</div><div><div class="num">${tot.old+tot.nw}</div><div class="lbl">${L('عدد الحالات','Total cases')}</div><div class="lbl" style="font-weight:600;">${L('قديمة','Old')} ${tot.old} · ${L('جديدة','New')} ${tot.nw}</div></div></div>
+      <div class="stat-card"><div class="ic" style="background:var(--gold-bg);color:var(--gold-ic);">${iPill()}</div><div><div class="num">${tot.iv}</div><div class="lbl">${L('التداخلات الدوائية','Drug interventions')}</div></div></div>
+      <div class="stat-card"><div class="ic">${iUsers()}</div><div><div class="num">${ivkPct(tot.acc,tot.iv)}%</div><div class="lbl">${L('نسبة القبول','Acceptance rate')}</div><div class="lbl" style="font-weight:600;">${tot.acc} ${L('مقبولة','accepted')}</div></div></div>
+      <div class="stat-card"><div class="ic" style="background:var(--coral-bg);color:var(--coral-ic);">${iPill()}</div><div><div class="num">${ivkPct(tot.rej,tot.iv)}%</div><div class="lbl">${L('نسبة الرفض','Rejection rate')}</div><div class="lbl" style="font-weight:600;">${tot.rej} ${L('مرفوضة','rejected')}</div></div></div>
+    </div>
+    ${groups.length ? groups.map(g=>{
+      const s=ivkSum(g.list);
+      return `<div class="card" style="margin-bottom:14px;overflow:auto;">
+        <div class="section-title">${esc(deptName(g.dept))}</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:700px;">
+          <thead><tr style="text-align:${al};color:var(--muted);">
+            <th style="${th}">${L('الصيدلي','Pharmacist')}</th>
+            <th style="${th}">${L('عدد الحالات','Cases')}</th>
+            <th style="${th}">${L('القديمة','Old')}</th>
+            <th style="${th}">${L('الجديدة','New')}</th>
+            <th style="${th}">${L('التداخلات','Interventions')}</th>
+            <th style="${th}">${L('المقبولة','Accepted')}</th>
+            <th style="${th}">${L('المرفوضة','Rejected')}</th>
+            <th style="${th}">${L('نسبة القبول','Acceptance')}</th>
+            <th style="${th}">${L('نسبة الرفض','Rejection')}</th>
+          </tr></thead>
+          <tbody>
+            ${g.list.map(r=>`<tr style="border-top:1px solid var(--card-border);">
+              <td style="${td}font-weight:700;">${esc(r.name)}</td>
+              <td style="${td}">${r.old+r.nw}</td><td style="${td}">${r.old}</td><td style="${td}">${r.nw}</td>
+              <td style="${td}">${r.iv}</td><td style="${td}">${r.acc}</td><td style="${td}">${r.rej}</td>
+              <td style="${td}"><span class="pill">${ivkPct(r.acc,r.iv)}%</span></td>
+              <td style="${td}"><span class="pill warn">${ivkPct(r.rej,r.iv)}%</span></td>
+            </tr>`).join('')}
+            <tr style="border-top:2px solid var(--card-border);font-weight:800;">
+              <td style="${td}">${L('الإجمالي','Total')}</td>
+              <td style="${td}">${s.old+s.nw}</td><td style="${td}">${s.old}</td><td style="${td}">${s.nw}</td>
+              <td style="${td}">${s.iv}</td><td style="${td}">${s.acc}</td><td style="${td}">${s.rej}</td>
+              <td style="${td}">${ivkPct(s.acc,s.iv)}%</td><td style="${td}">${ivkPct(s.rej,s.iv)}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+    }).join('') : `<div class="card empty-state"><div class="ic">📭</div>${L('لا توجد بيانات بعد','No data yet')}</div>`}
+  `;
+  bindFilterBar(renderKPIs);
+  $('#ivk-add').onclick=()=>openIvkModal();
+  $('#ivk-edit').onclick=()=>openIvkEditList(start,end);
+  if(STATE.isLeader) $('#ivk-export').onclick=()=>exportIvkExcel(start,end);
+}
+
+/* Add new / edit form. total cases = old + new, and both rates are calculated live. */
+function openIvkModal(entry){
+  const isEdit=!!entry;
+  const deptId=isEdit?entry.department_id:STATE.profile?.department_id;
+  const rosterId=isEdit?entry.roster_id:STATE.profile?.roster_id;
+  if(!deptId||!rosterId){ toast(L('حسابك غير مرتبط بقسم واسم بعد، تواصل مع القائد','Your account is not linked to a department and name yet')); return; }
+  const dept=STATE.departments.find(d=>d.id===deptId);
+  const who=isEdit?(entry.roster?.full_name||''):(STATE.profile?.full_name||'');
+  const v=k=>isEdit?(entry[k]||0):0;
+  const overlay=document.createElement('div'); overlay.className='modal-overlay';
+  overlay.innerHTML=`
+    <div class="modal modal-pos" style="max-width:520px;">
+      <button class="btn-outline close" style="position:absolute;left:18px;top:18px;">✕</button>
+      <h3>Intervention — ${isEdit?L('تعديل','Edit'):L('إضافة جديد','Add new')}</h3>
+      <p class="page-sub">${esc(who)} · ${esc(deptName(dept))}</p>
+      <div class="field"><label>${L('التاريخ','Date')}</label><input type="date" id="ivk-date" value="${isEdit?entry.entry_date:localISO(new Date())}"></div>
+      <div class="field"><label>${L('عدد الحالات (يُجمع تلقائيًا)','Total cases (calculated)')}</label><input type="number" id="ivk-total" value="0" disabled></div>
+      <div class="field"><label>${L('الحالات القديمة','Old cases')}</label><input type="number" min="0" inputmode="numeric" id="ivk-old" value="${v('old_cases')}"></div>
+      <div class="field"><label>${L('الحالات الجديدة','New cases')}</label><input type="number" min="0" inputmode="numeric" id="ivk-new" value="${v('new_cases')}"></div>
+      <div class="field"><label>${L('عدد التداخلات الدوائية في اليوم','Drug interventions per day')}</label><input type="number" min="0" inputmode="numeric" id="ivk-iv" value="${v('interventions_count')}"></div>
+      <div class="field"><label>${L('عدد الحالات المقبولة من الطبيب','Cases accepted by the physician')}</label><input type="number" min="0" inputmode="numeric" id="ivk-acc" value="${v('accepted_count')}"></div>
+      <div class="field"><label>${L('عدد الحالات المرفوضة من الطبيب','Cases rejected by the physician')}</label><input type="number" min="0" inputmode="numeric" id="ivk-rej" value="${v('rejected_count')}"></div>
+      <div class="formrow">
+        <div class="field"><label>${L('نسبة القبول','Acceptance rate')}</label><input type="text" id="ivk-accp" value="0%" disabled></div>
+        <div class="field"><label>${L('نسبة الرفض','Rejection rate')}</label><input type="text" id="ivk-rejp" value="0%" disabled></div>
+      </div>
+      <button class="btn-primary" id="ivk-save">${t('save')}</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close').onclick=()=>overlay.remove();
+  overlay.onclick=e=>{ if(e.target===overlay) overlay.remove(); };
+  const g=id=>overlay.querySelector('#'+id);
+  const recalc=()=>{
+    g('ivk-total').value=ivkNum(g('ivk-old').value)+ivkNum(g('ivk-new').value);
+    const iv=ivkNum(g('ivk-iv').value);
+    g('ivk-accp').value=ivkPct(ivkNum(g('ivk-acc').value),iv)+'%';
+    g('ivk-rejp').value=ivkPct(ivkNum(g('ivk-rej').value),iv)+'%';
+  };
+  ['ivk-old','ivk-new','ivk-iv','ivk-acc','ivk-rej'].forEach(id=>g(id).addEventListener('input',recalc));
+  recalc();
+
+  g('ivk-save').onclick=async()=>{
+    const fields={
+      entry_date:g('ivk-date').value,
+      old_cases:ivkNum(g('ivk-old').value), new_cases:ivkNum(g('ivk-new').value),
+      interventions_count:ivkNum(g('ivk-iv').value),
+      accepted_count:ivkNum(g('ivk-acc').value), rejected_count:ivkNum(g('ivk-rej').value),
+    };
+    if(!fields.entry_date){ toast(L('اختر التاريخ','Pick a date')); return; }
+    if(fields.accepted_count+fields.rejected_count>fields.interventions_count){
+      toast(L('المقبولة + المرفوضة أكبر من عدد التداخلات','Accepted + rejected is more than the number of interventions')); return;
+    }
+    const btn=g('ivk-save'); btn.disabled=true; btn.textContent='...';
+    const {error}=isEdit
+      ? await sb.from('intervention_kpi_entries').update({...fields, updated_at:new Date().toISOString()}).eq('id',entry.id)
+      : await sb.from('intervention_kpi_entries').insert({...fields, department_id:deptId, roster_id:rosterId, submitted_by:STATE.profile.id});
+    btn.disabled=false; btn.textContent=t('save');
+    if(error){
+      console.error(error);
+      toast(ivkTableMissing(error)?L('جدول Intervention لم يُنشأ بعد في قاعدة البيانات','The Intervention table has not been created yet'):L('تعذر الحفظ','Could not save'));
+      return;
+    }
+    overlay.remove(); toast(L('تم الحفظ','Saved')); renderView();
+  };
+}
+
+/* Edit: pick one of the saved entries (pharmacists see their own, leaders see everyone's) */
+async function openIvkEditList(start,end){
+  let q=sb.from('intervention_kpi_entries').select('*, roster(full_name)').gte('entry_date',start).lte('entry_date',end).order('entry_date',{ascending:false}).limit(150);
+  if(!STATE.isLeader) q=q.eq('submitted_by',STATE.profile.id);
+  const {data,error}=await q;
+  if(error){ console.error(error); toast(ivkTableMissing(error)?L('جدول Intervention لم يُنشأ بعد في قاعدة البيانات','The Intervention table has not been created yet'):L('تعذر تحميل البيانات','Could not load the data')); return; }
+  const list=data||[];
+  const overlay=document.createElement('div'); overlay.className='modal-overlay';
+  overlay.innerHTML=`
+    <div class="modal modal-pos" style="max-width:560px;">
+      <button class="btn-outline close" style="position:absolute;left:18px;top:18px;">✕</button>
+      <h3>${L('تعديل بيانات Intervention','Edit Intervention entries')}</h3>
+      <p class="page-sub">${start} → ${end}</p>
+      ${list.length ? list.map(e=>`
+        <div class="list-row">
+          <div style="min-width:0;">
+            <b style="font-size:13px;">${e.entry_date}${STATE.isLeader?' · '+esc(e.roster?.full_name||'—'):''}</b>
+            <div style="color:var(--muted);font-size:11.5px;line-height:1.6;">
+              ${L('الحالات','Cases')} ${(e.old_cases||0)+(e.new_cases||0)} (${L('قديمة','old')} ${e.old_cases||0} · ${L('جديدة','new')} ${e.new_cases||0})
+              · ${L('التداخلات','Interventions')} ${e.interventions_count||0}
+              · ${L('مقبولة','Accepted')} ${e.accepted_count||0} · ${L('مرفوضة','Rejected')} ${e.rejected_count||0}
+            </div>
+          </div>
+          <button class="btn-outline ivk-edit-row" data-id="${e.id}">✎ ${L('تعديل','Edit')}</button>
+        </div>`).join('') : `<div class="empty-state" style="padding:24px;"><div class="ic">📭</div>${L('لا توجد بيانات في هذه الفترة','No entries in this period')}</div>`}
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close').onclick=()=>overlay.remove();
+  overlay.onclick=e=>{ if(e.target===overlay) overlay.remove(); };
+  overlay.querySelectorAll('.ivk-edit-row').forEach(b=>b.onclick=()=>{
+    const entry=list.find(x=>x.id===b.dataset.id);
+    overlay.remove(); if(entry) openIvkModal(entry);
+  });
+}
+
+/* Leaders: one workbook, one sheet per department, a row per pharmacist */
+async function exportIvkExcel(start,end){
+  toast(L('جارٍ تجهيز الملف...','Preparing the file...'));
+  const [{data:roster},{data:entries,error}]=await Promise.all([
+    sb.from('roster').select('id,full_name,department_id').eq('active',true).order('full_name'),
+    sb.from('intervention_kpi_entries').select('*, roster(full_name)').gte('entry_date',start).lte('entry_date',end),
+  ]);
+  if(error){ console.error(error); toast(L('تعذر تجهيز الملف','Could not prepare the file')); return; }
+  const rows=buildIvkRows(roster,entries);
+  const groups=STATE.departments.map(d=>({dept:d,list:rows.filter(r=>r.department_id===d.id)})).filter(g=>g.list.length);
+  if(!groups.length){ toast(L('لا توجد بيانات للتصدير','Nothing to export')); return; }
+
+  const wb=new ExcelJS.Workbook(); wb.creator='Clinical Pharmacy Dashboard'; wb.created=new Date();
+  const used=new Set();
+  const border={top:{style:'thin',color:{argb:'FF97CADB'}},left:{style:'thin',color:{argb:'FF97CADB'}},bottom:{style:'thin',color:{argb:'FF97CADB'}},right:{style:'thin',color:{argb:'FF97CADB'}}};
+  const heads=[L('الصيدلي','Pharmacist'),L('عدد الحالات','Total cases'),L('الحالات القديمة','Old cases'),L('الحالات الجديدة','New cases'),L('عدد التداخلات الدوائية','Drug interventions'),L('المقبولة من الطبيب','Accepted by physician'),L('المرفوضة من الطبيب','Rejected by physician'),L('نسبة القبول','Acceptance rate'),L('نسبة الرفض','Rejection rate')];
+
+  groups.forEach(gr=>{
+    const base=(deptName(gr.dept)||'Dept').replace(/[\[\]\*\/\\\?:]/g,'').slice(0,28)||'Dept';
+    let name=base, i=2; while(used.has(name.toLowerCase())){ name=base+' '+i++; } used.add(name.toLowerCase());
+    const ws=wb.addWorksheet(name,{views:[{rightToLeft:LANG==='ar'}]});
+    ws.columns=[{width:30},{width:14},{width:16},{width:16},{width:20},{width:20},{width:20},{width:14},{width:14}];
+
+    ws.mergeCells('A1:I1');
+    const title=ws.getCell('A1'); title.value=`Intervention — ${deptName(gr.dept)}`;
+    title.font={bold:true,size:14,color:{argb:'FFFFFFFF'}}; title.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF02457A'}};
+    title.alignment={vertical:'middle',horizontal:'center'}; ws.getRow(1).height=26;
+    ws.mergeCells('A2:I2');
+    const per=ws.getCell('A2'); per.value=`${start} → ${end}`; per.alignment={horizontal:'center'}; per.font={color:{argb:'FF3E6C93'}};
+
+    const hr=ws.getRow(4); hr.height=34;
+    heads.forEach((h,ci)=>{
+      const c=hr.getCell(ci+1); c.value=h; c.font={bold:true,color:{argb:'FFFFFFFF'}};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF018ABE'}};
+      c.alignment={horizontal:'center',vertical:'middle',wrapText:true}; c.border=border;
+    });
+
+    let r=5; const first=r;
+    gr.list.forEach(p=>{
+      const row=ws.getRow(r);
+      const iv=p.iv;
+      row.getCell(1).value=p.name;
+      row.getCell(2).value={formula:`C${r}+D${r}`,result:p.old+p.nw};
+      row.getCell(3).value=p.old; row.getCell(4).value=p.nw;
+      row.getCell(5).value=p.iv; row.getCell(6).value=p.acc; row.getCell(7).value=p.rej;
+      row.getCell(8).value={formula:`IF(E${r}=0,0,F${r}/E${r})`,result:iv>0?p.acc/iv:0};
+      row.getCell(9).value={formula:`IF(E${r}=0,0,G${r}/E${r})`,result:iv>0?p.rej/iv:0};
+      for(let ci=1;ci<=9;ci++){ const c=row.getCell(ci); c.border=border; c.alignment={horizontal:ci===1?'start':'center',vertical:'middle'}; }
+      row.getCell(8).numFmt='0.0%'; row.getCell(9).numFmt='0.0%';
+      r++;
+    });
+    const last=r-1; const s=ivkSum(gr.list);
+    const tr=ws.getRow(r);
+    tr.getCell(1).value=L('الإجمالي','Total');
+    ['B','C','D','E','F','G'].forEach((col,k)=>{
+      const vals=[s.old+s.nw,s.old,s.nw,s.iv,s.acc,s.rej];
+      tr.getCell(col).value={formula:`SUM(${col}${first}:${col}${last})`,result:vals[k]};
+    });
+    tr.getCell('H').value={formula:`IF(E${r}=0,0,F${r}/E${r})`,result:s.iv>0?s.acc/s.iv:0};
+    tr.getCell('I').value={formula:`IF(E${r}=0,0,G${r}/E${r})`,result:s.iv>0?s.rej/s.iv:0};
+    tr.getCell('H').numFmt='0.0%'; tr.getCell('I').numFmt='0.0%';
+    for(let ci=1;ci<=9;ci++){
+      const c=tr.getCell(ci); c.border=border; c.font={bold:true};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD6E8EE'}};
+      c.alignment={horizontal:ci===1?'start':'center',vertical:'middle'};
+    }
+  });
+
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=`Intervention_KPI_${start}_to_${end}.xlsx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  toast(L('تم تحميل الملف ✅','File downloaded ✅'));
+}
+
+/* ============================================================ HOSPITAL (ANTIBIOTIC STEWARDSHIP) KPIs */
+const HOSPITAL_KPI_INDICATORS = [
+  {key:'doc', total:'doc_total', part:'doc_with_reason',
+    title:'1- قياس مدى الإلتزام بتوثيق الدواعي الطبية و سبب وصف المضادات الحيوية',
+    formula:'عدد المضادت الحيوية المكتوب لها الداعي الطبي /  إجمالي عدد المضادات الحيوية الموصوفة X 100',
+    total_label:'إجمالي عدد المضادات الحيوية الموصوفة', part_label:'عدد المضادات الحيوية المكتوب لها الداعي الطبي'},
+  {key:'culture', total:'culture_total', part:'culture_deescalated',
+    title:'2- قياس نسبة الإلتزام بنتائج المزارع البكتيرية في وصف المضادات الحيوية',
+    formula:'عدد المرضى الذين تلقوا مضادات حيوية تجريبية و تم التحويل للمضاد الحيوي الموجه طبقا لنتيجة المزرعة البكتيرية/ إجمالي عدد المرضى الذين تلقوا مضادات حيوية تجريبية و يوجد نتيجة مزرعة بكتيرية  ايجابية X 100',
+    total_label:'إجمالي عدد المرضى الذين تلقوا مضادات حيوية تجريبية ويوجد نتيجة مزرعة بكتيرية إيجابية', part_label:'عدد المرضى الذين تلقوا مضادات حيوية تجريبية وتم التحويل للمضاد الحيوي الموجه طبقًا لنتيجة المزرعة البكتيرية'},
+  {key:'surg_before', total:'surgical_before_total', part:'surgical_before_applied',
+    title:'3- قياس مدى الإلتزام ببروتوكول الوقاية في العمليات الجراحية — قبل العملية',
+    formula:'قياس نسبة الالتزام بالبروتوكول قبل العملية الجراحية: عدد المرضى المطبق عليهم بروتوكول الوقاية قبل العمليات الجراحية / إجمالي عدد مرضى العمليات الجراحية X 100',
+    total_label:'إجمالي عدد مرضى العمليات الجراحية', part_label:'عدد المرضى المطبق عليهم بروتوكول الوقاية قبل العمليات الجراحية'},
+  {key:'surg_during', total:'surgical_during_total', part:'surgical_during_applied',
+    title:'3- قياس مدى الإلتزام ببروتوكول الوقاية في العمليات الجراحية — أثناء العملية',
+    formula:'قياس نسبة الالتزام بالبروتوكول اثناء العملية الجراحية: عدد المرضى المطبق عليهم بروتوكول الوقاية أثناء العمليات الجراحية/ إجمالي عدد مرضى العمليات الجراحية X 100',
+    total_label:'إجمالي عدد مرضى العمليات الجراحية', part_label:'عدد المرضى المطبق عليهم بروتوكول الوقاية أثناء العمليات الجراحية'},
+  {key:'surg_after', total:'surgical_after_total', part:'surgical_after_applied',
+    title:'3- قياس مدى الإلتزام ببروتوكول الوقاية في العمليات الجراحية — بعد العملية',
+    formula:'قياس نسبة الالتزام بالبروتوكول بعد العملية الجراحية: عدد المرضى المطبق عليهم بروتوكول الوقاية بعد العمليات الجراحية / إجمالي عدد مرضى العمليات الجراحية X 100',
+    total_label:'إجمالي عدد مرضى العمليات الجراحية', part_label:'عدد المرضى المطبق عليهم بروتوكول الوقاية بعد العمليات الجراحية'},
+  {key:'physician', total:'physician_reco_total', part:'physician_reco_accepted',
+    title:'4- قياس مدى التزام الطبيب المعالج بقبول توصيات الصيدلي الاكلينيكي للمضادات الحيوية الموصوفة',
+    formula:'عدد التوصيات المقبولة (للمضادات الحيوية الموصوفة) من الطبيب المعالج / إجمالي عدد التوصيات المكتوبة (للمضادات الحيوية الموصوفة) من قبل الصيدلي الاكلينيكي X 100',
+    total_label:'إجمالي عدد التوصيات المكتوبة (للمضادات الحيوية الموصوفة) من قبل الصيدلي الاكلينيكي', part_label:'عدد التوصيات المقبولة (للمضادات الحيوية الموصوفة) من الطبيب المعالج'},
+  {key:'restriction', total:'restriction_total', part:'restriction_rejected',
+    title:'6- قياس نسبة الرفض لنماذج تقييد صرف أنواع خاصة من المضادات الحيوية (restriction forms)',
+    formula:'عدد نماذج تقييد صرف انواع خاصة من المضادات الحيوية المرفوضة من قبل الصيدلي الاكلينيكي / اجمالي عدد نماذج تقييد صرف انواع خاصة من المضادات الحيوية X 100',
+    total_label:'إجمالي عدد نماذج تقييد صرف أنواع خاصة من المضادات الحيوية', part_label:'عدد نماذج تقييد صرف أنواع خاصة من المضادات الحيوية المرفوضة من قبل الصيدلي الاكلينيكي'},
+  {key:'me', total:'me_total', part:'me_classified',
+    title:'7- قياس مدى الالتزام بعمل تحليل للأخطاء الدوائية مصنفة حسب الخطورة',
+    formula:'عدد الاخطاء الدوائية للمضادات الحيوية من فئات (C,D,E,F,G,H,I) / اجمالي عدد الاخطاء الدوائية X 100',
+    total_label:'إجمالي عدد الأخطاء الدوائية', part_label:'عدد الأخطاء الدوائية للمضادات الحيوية من فئات (C,D,E,F,G,H,I)'},
+  {key:'avail', total:'ab_formulary_total', part:'ab_available',
+    title:'8- قياس نسبة توافر المضادات الحيوية بالمستشفى',
+    formula:'اجمالي عدد المضادات الحيوية المتوفرة بالمستشفى / اجمالي عدد المضادات الحيوية المدرجة ب AB formulary X 100',
+    total_label:'إجمالي عدد المضادات الحيوية المدرجة بـ AB formulary', part_label:'إجمالي عدد المضادات الحيوية المتوفرة بالمستشفى'},
+];
+const SURGICAL_GROUP_TITLE = '3- قياس مدى الإلتزام ببروتوكول الوقاية في العمليات الجراحية';
+const HKPI_NUM_FIELDS = ['ab_formulary_total','ab_available','me_total','me_classified','restriction_total','restriction_rejected','physician_reco_total','physician_reco_accepted','surgical_after_total','surgical_after_applied','surgical_during_total','surgical_during_applied','surgical_before_total','surgical_before_applied','culture_total','culture_deescalated','doc_total','doc_with_reason'];
+
+
+async function renderHospitalKPI(c){
+  const year = STATE.filter.year || new Date().getFullYear();
+  const month = STATE.filter.month || (new Date().getMonth()+1);
+  const monthNames= LANG==='ar' ? ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'] : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  let q = sb.from('hospital_kpi_entries').select('*').eq('entry_year', year).eq('entry_month', month);
+  if(!STATE.isLeader && STATE.profile.department_id) q = q.eq('department_id', STATE.profile.department_id);
+  const {data:entries} = await q;
+  const rows = entries||[];
+
+  const sums={}; HKPI_NUM_FIELDS.forEach(f=>sums[f]=0);
+  rows.forEach(r=>HKPI_NUM_FIELDS.forEach(f=>sums[f]+=Number(r[f]||0)));
+  const pct=(part,total)=> sums[total]>0 ? Math.round(sums[part]/sums[total]*1000)/10 : 0;
+  const meCatCounts={A:0,B:0,C:0,D:0}; rows.forEach(r=>{ if(r.me_category && meCatCounts[r.me_category]!==undefined) meCatCounts[r.me_category]++; });
+
+  c.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+      <p class="page-sub" style="margin:0;">${LANG==='ar'?'مؤشرات استخدام المضادات الحيوية — اضغط على أي بطاقة لتحديث بياناتها، وتُجمّع آليًا نهاية الشهر':'Antibiotic stewardship indicators — click any card to update it, auto-aggregated monthly'}</p>
+      <div style="display:flex;gap:8px;">
+        ${STATE.isLeader? `<button class="btn-primary" id="hkpi-export-xlsx" style="width:auto;">⬇ Excel</button><button class="btn-outline" id="hkpi-export-pdf">⬇ PDF</button>` : ''}
+      </div>
+    </div>
+    ${filterBarHtml()}
+    <p class="page-sub" style="margin:4px 0 12px;">${monthNames[month-1]} ${year} — ${LANG==='ar'?'الإجمالي الشهري':'Monthly total'} (${rows.length} ${LANG==='ar'?'إدخال':'entries'})</p>
+    <div class="grid cols-3">
+        ${HOSPITAL_KPI_INDICATORS.map(ind=>`
+          <div class="dep-card hkpi-card" data-key="${ind.key}">
+              <div class="name" style="font-size:13px;line-height:1.5;min-height:40px;">${ind.title}</div>
+              <div style="color:var(--muted);font-size:11px;line-height:1.6;margin-top:8px;">
+                ${ind.total_label}: <b style="color:var(--navy);">${sums[ind.total]}</b><br>
+                ${ind.part_label}: <b style="color:var(--navy);">${sums[ind.part]}</b>
+                ${ind.key==='me' ? `<br>${LANG==='ar'?'حسب التصنيف':'By category'}: A=${meCatCounts.A} · B=${meCatCounts.B} · C=${meCatCounts.C} · D=${meCatCounts.D}` : ''}
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
+                <span class="count" style="font-size:20px;">${pct(ind.part,ind.total)}%</span>
+                <span class="pill muted">＋ ${LANG==='ar'?'تحديث':'Update'}</span>
+              </div>
+          </div>`).join('')}
+    </div>
+  `;
+  bindFilterBar(renderKPIs);
+  $$('.hkpi-card').forEach(el=>el.onclick=()=>openHospitalKpiCardModal(HOSPITAL_KPI_INDICATORS.find(i=>i.key===el.dataset.key)));
+  if(STATE.isLeader){
+    $('#hkpi-export-xlsx').onclick=()=>exportHospitalKpiExcel(year, month, monthNames);
+    $('#hkpi-export-pdf').onclick=()=>exportHospitalKpiPdf(year, month, monthNames);
+  }
+}
+
+/* Scoped single-indicator add/update modal — fetches the existing week row (if any) and merges
+   just this indicator's fields into it, so other indicators' data on that row is preserved. */
+function openHospitalKpiCardModal(ind){
+  const overlay=document.createElement('div'); overlay.className='modal-overlay';
+  const myDept = STATE.departments.find(d=>d.id===STATE.profile.department_id);
+  const now=new Date();
+  overlay.innerHTML=`
+    <div class="modal modal-pos" style="max-width:480px;">
+      <button class="btn-outline close" style="position:absolute;left:18px;top:18px;">✕</button>
+      <h3>${ind.title}</h3>
+      <p class="page-sub">${LANG==='ar'?'القسم':'Department'}: <b>${esc(deptName(myDept))}</b></p>
+      <div class="formrow">
+        <div class="field"><label>${LANG==='ar'?'السنة':'Year'}</label><input type="number" id="ck-year" value="${now.getFullYear()}"></div>
+        <div class="field"><label>${LANG==='ar'?'الشهر':'Month'}</label><select id="ck-month">${(LANG==='ar'?['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']).map((m,i)=>`<option value="${i+1}" ${i+1===(now.getMonth()+1)?'selected':''}>${m}</option>`).join('')}</select></div>
+      </div>
+      <div class="field"><label>${LANG==='ar'?'الأسبوع':'Week'}</label><select id="ck-week"><option value="1">${LANG==='ar'?'الأسبوع الأول':'Week 1'}</option><option value="2">${LANG==='ar'?'الأسبوع الثاني':'Week 2'}</option><option value="3">${LANG==='ar'?'الأسبوع الثالث':'Week 3'}</option><option value="4">${LANG==='ar'?'الأسبوع الرابع':'Week 4'}</option></select></div>
+      <hr style="border:none;border-top:1px solid var(--card-border);margin:14px 0;">
+      <div class="field"><label>${ind.total_label}</label><input type="number" min="0" id="ck-total" value="0"></div>
+      ${ind.key==='me' ? `
+      <div class="field"><label>${LANG==='ar'?'تصنيف الخطورة':'Severity category'}</label>
+        <select id="ck-category"><option value="">—</option><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option></select>
+      </div>` : ''}
+      <div class="field"><label>${ind.part_label}</label><input type="number" min="0" id="ck-part" value="0"></div>
+      <button class="btn-primary" id="ck-save">${t('save')}</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close').onclick=()=>overlay.remove();
+  overlay.onclick=(e)=>{if(e.target===overlay) overlay.remove();};
+
+  overlay.querySelector('#ck-save').onclick=async()=>{
+    const btn=$('#ck-save',overlay); btn.disabled=true; btn.textContent='...';
+    const entry_year=parseInt($('#ck-year',overlay).value), entry_month=parseInt($('#ck-month',overlay).value), week_number=parseInt($('#ck-week',overlay).value);
+    const {data:existing} = await sb.from('hospital_kpi_entries').select('*')
+      .eq('department_id', STATE.profile.department_id).eq('entry_year',entry_year).eq('entry_month',entry_month)
+      .eq('week_number',week_number).eq('submitted_by', STATE.profile.id).maybeSingle();
+    const payload = existing ? {...existing} : { department_id: STATE.profile.department_id, entry_year, entry_month, week_number, submitted_by: STATE.profile.id };
+    delete payload.id; delete payload.created_at; delete payload.updated_at;
+    HKPI_NUM_FIELDS.forEach(f=>{ if(payload[f]===undefined) payload[f]=0; });
+    payload[ind.total] = parseFloat($('#ck-total',overlay).value)||0;
+    payload[ind.part] = parseFloat($('#ck-part',overlay).value)||0;
+    if(ind.key==='me') payload.me_category = $('#ck-category',overlay).value || null;
+    const {error} = await sb.from('hospital_kpi_entries').upsert(payload, {onConflict:'department_id,entry_year,entry_month,week_number,submitted_by'});
+    btn.disabled=false; btn.textContent=t('save');
+    if(error){ toast(LANG==='ar'?'تعذر الحفظ':'Could not save'); console.error(error); return; }
+    overlay.remove(); toast(LANG==='ar'?'تم الحفظ':'Saved'); renderView();
+  };
+}
+
+const SHEET_GROUPS = [...HOSPITAL_KPI_INDICATORS].reverse(); // matches original column order H..Y (8,7,6,4,3c,3b,3a,2,1)
+const SHEET_COLS = ['H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y'];
+(function assignCols(){ let i=0; SHEET_GROUPS.forEach(g=>{ g.colTotal=SHEET_COLS[i]; g.colPart=SHEET_COLS[i+1]; i+=2; }); })();
+const WEEK_LABELS_AR=['الاسبوع الاول','الاسبوع الثاني','الاسبوع الثالث','الاسبوع الرابع'];
+
+async function fetchHospitalKpiRaw(year, month){
+  let q = sb.from('hospital_kpi_entries').select('*').eq('entry_year', year).eq('entry_month', month);
+  if(!STATE.isLeader && STATE.profile.department_id) q = q.eq('department_id', STATE.profile.department_id);
+  const {data} = await q;
+  const byDept={};
+  (data||[]).forEach(r=>{ (byDept[r.department_id]=byDept[r.department_id]||[]).push(r); });
+  return byDept;
+}
+function weekSumsForDept(entriesForDept){
+  const weeks=[1,2,3,4].map(()=>{ const o={}; HKPI_NUM_FIELDS.forEach(f=>o[f]=0); return o; });
+  (entriesForDept||[]).forEach(r=>{ const w=r.week_number-1; if(w>=0&&w<4) HKPI_NUM_FIELDS.forEach(f=>weeks[w][f]+=Number(r[f]||0)); });
+  return weeks;
+}
+function base64ToArrayBuffer(b64){
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function exportHospitalKpiExcel(year, month, monthNames){
+  const byDept = await fetchHospitalKpiRaw(year, month);
+  const deptIds = Object.keys(byDept);
+  if(!deptIds.length){ toast(LANG==='ar'?'لا توجد بيانات لهذا الشهر':'No data for this month'); return; }
+
+  for(const depId of deptIds){
+    const dept = STATE.departments.find(d=>d.id===depId);
+    const weeks = weekSumsForDept(byDept[depId]);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(base64ToArrayBuffer(HOSPITAL_KPI_TEMPLATE_B64));
+    const ws = wb.worksheets[0];
+    try{ ws.name = (deptName(dept)||'Dept').slice(0,30).replace(/[\[\]\*\/\\\?:]/g,''); }catch(e){}
+
+    for(let w=0; w<4; w++){
+      const r = 4+w;
+      SHEET_GROUPS.forEach(g=>{
+        ws.getCell(`${g.colTotal}${r}`).value = weeks[w][g.total];
+        ws.getCell(`${g.colPart}${r}`).value = weeks[w][g.part];
+      });
+    }
+    ws.getCell('AA4').value = deptName(dept);
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob=new Blob([buf], {type:'application/octet-stream'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url;
+    a.download = `hospital-kpi-${(dept?.code||deptName(dept)||'dept').replace(/\s+/g,'-')}-${year}-${month}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    await new Promise(r=>setTimeout(r,350));
+  }
+}
+
+async function exportHospitalKpiPdf(year, month, monthNames){
+  const byDept = await fetchHospitalKpiRaw(year, month);
+  const deptIds = Object.keys(byDept);
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF();
+  let first=true;
+  const list = deptIds.length ? deptIds : [null];
+  list.forEach(depId=>{
+    if(!first) doc.addPage();
+    first=false;
+    const dept = depId ? STATE.departments.find(d=>d.id===depId) : null;
+    doc.setFontSize(12);
+    doc.text(`Hospital KPIs - ${monthNames[month-1]} ${month===0?'':''}${year}${dept? ' - '+ (dept.name_en||dept.name_ar) : ''}`, 14, 14);
+    if(!depId){ doc.setFontSize(10); doc.text('No data for this month', 14, 24); return; }
+    const weeks = weekSumsForDept(byDept[depId]);
+    const body=[];
+    SHEET_GROUPS.forEach(g=>{
+      const wk = weeks.map(w=>`${w[g.part]}/${w[g.total]}`);
+      const sumTotal = weeks.reduce((s,w)=>s+w[g.total],0), sumPart = weeks.reduce((s,w)=>s+w[g.part],0);
+      const pctv = sumTotal>0 ? Math.round(sumPart/sumTotal*1000)/10 : 0;
+      body.push([g.title, g.total_label+' / '+g.part_label, ...wk, `${sumPart}/${sumTotal}`, pctv+'%']);
+    });
+    doc.autoTable({ startY:20, head:[['Indicator','Fields','Wk1','Wk2','Wk3','Wk4','Sum','%']], body, styles:{fontSize:6.5, cellPadding:1.5}, columnStyles:{0:{cellWidth:38}, 1:{cellWidth:55}} });
+  });
+  doc.save(`hospital-kpi-${year}-${month}.pdf`);
+}
+
+
+
+
+/* ============================================================ EXCEL EXPORT (leaders) — mirrors the uploaded reference workbook */
+function topN(rows, keyFn, n){
+  const counts={};
+  rows.forEach(r=>{ const k=keyFn(r); if(k) counts[k]=(counts[k]||0)+1; });
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,n);
+}
+function stageCategory(stage){
+  if(!stage) return null;
+  const m = stage.match(/^\[(.*?)\]/);
+  return m? m[1] : stage;
+}
+// Render a Chart.js chart off-screen and return a PNG data URL
+async function chartToImage(cfg, width=560, height=300){
+  return new Promise(resolve=>{
+    const canvas=document.createElement('canvas');
+    canvas.width=width; canvas.height=height;
+    canvas.style.position='fixed'; canvas.style.left='-99999px'; canvas.style.top='0';
+    document.body.appendChild(canvas);
+    const merged = JSON.parse(JSON.stringify(cfg));
+    merged.options = Object.assign({responsive:false, animation:false, devicePixelRatio:2}, cfg.options||{});
+    const ch = new Chart(canvas, merged);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      const url = canvas.toDataURL('image/png');
+      ch.destroy(); canvas.remove();
+      resolve(url);
+    }));
+  });
+}
+function styleTitle(ws, text, row=1, span=8, color='0B5750'){
+  ws.mergeCells(row,1,row,span);
+  const c = ws.getCell(row,1);
+  c.value = text; c.font={bold:true,size:14,color:{argb:'FFFFFFFF'}};
+  c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF'+color}};
+  c.alignment={vertical:'middle',horizontal:'center'};
+  ws.getRow(row).height=24;
+}
+function styleSubHeader(ws, text, row, col=1, span=4){
+  ws.mergeCells(row,col,row,col+span-1);
+  const c = ws.getCell(row,col);
+  c.value=text; c.font={bold:true,size:11,color:{argb:'FF0B5750'}};
+  c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE8F5F0'}};
+}
+function writeTable(ws, startRow, startCol, headers, rows){
+  headers.forEach((h,i)=>{
+    const c=ws.getCell(startRow,startCol+i);
+    c.value=h; c.font={bold:true,color:{argb:'FFFFFFFF'}};
+    c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF2A9D8F'}};
+    c.alignment={horizontal:'center'};
+  });
+  rows.forEach((r,ri)=>{
+    r.forEach((v,ci)=>{
+      const c = ws.getCell(startRow+1+ri, startCol+ci);
+      c.value = (v===undefined||v===null)? '' : v;
+      c.border={bottom:{style:'thin',color:{argb:'FFE0E0E0'}}};
+    });
+  });
+  return startRow + rows.length + 1; // next free row
+}
+
+async function exportKPIsExcel(start,end){
+  toast(LANG==='ar'?'جارِ تجهيز الملف، قد يستغرق لحظات...':'Preparing file, this may take a moment...');
+  const {data:rows} = await sb.from('interventions')
+    .select('intervention_date,department_id,ward_id,roster_id,roster(full_name),main_drug_generic,main_drug_brand,second_drug_generic,second_drug_brand,is_dtp,problem_type,finding_description,recommendation,reference_used,follow_up,physician_acceptance,is_medication_error,error_stage,error_severity,possible_cause,error_description,action_taken')
+    .gte('intervention_date',start).lte('intervention_date',end).order('intervention_date');
+  const all=rows||[];
+  const dtpRows=all.filter(r=>r.is_dtp);
+  const meRows=all.filter(r=>r.is_medication_error);
+  // "Od" = Ordering-stage errors (Ordering decision / Ordering Process) — the reference workbook analyses errors excluding this stage separately
+  const meOtherThanOd = meRows.filter(r=>!(r.error_stage||'').toLowerCase().includes('ordering'));
+  const accept=all.filter(r=>r.physician_acceptance==='Accept').length, reject=all.filter(r=>r.physician_acceptance==='reject').length;
+  const dn = id => deptName(STATE.departments.find(d=>d.id===id));
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator='Clinical Pharmacy Dashboard'; wb.created=new Date();
+
+  const barCfg=(labels,data,label,color)=>({type:'bar', data:{labels, datasets:[{label, data, backgroundColor:color}]}, options:{plugins:{legend:{display:false},title:{display:true,text:label}}, scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+  const pieCfg=(labels,data,label,colors)=>({type:'pie', data:{labels, datasets:[{data, backgroundColor:colors}]}, options:{plugins:{legend:{position:'bottom'},title:{display:true,text:label}}}});
+
+  /* ============ Sheet 1: Total reports overview ============ */
+  {
+    const ws = wb.addWorksheet('Total reports overview');
+    ws.columns=[{width:26},{width:16},{width:12},{width:18}];
+    styleTitle(ws,'Total Reports Overview',1,4);
+    const byDept={}; STATE.departments.forEach(d=>byDept[d.id]={name:deptName(d),total:0,dtp:0,me:0});
+    all.forEach(r=>{ if(!byDept[r.department_id]) return; byDept[r.department_id].total++; if(r.is_dtp)byDept[r.department_id].dtp++; if(r.is_medication_error)byDept[r.department_id].me++; });
+    let row = writeTable(ws,3,1,['Department','Total Reports','DTP','Medication Errors'], Object.values(byDept).map(d=>[d.name,d.total,d.dtp,d.me]));
+    writeTable(ws,row+1,1,['Metric','Value'],[
+      ['Total Reports', all.length],['Total DTP', dtpRows.length],['Total Medication Errors', meRows.length],
+      ['Accepted', accept],['Rejected', reject],
+      ['Acceptance Rate %', (accept+reject)? Math.round(accept/(accept+reject)*100):0],
+    ]);
+    const img = await chartToImage(barCfg(Object.values(byDept).map(d=>d.name), Object.values(byDept).map(d=>d.total), 'Total Reports per Department', '#2A9D8F'));
+    const imgId = wb.addImage({base64:img, extension:'png'});
+    ws.addImage(imgId, {tl:{col:5,row:2}, ext:{width:520,height:280}});
+  }
+
+  /* ============ Sheet 2: All DTP ============ */
+  {
+    const ws = wb.addWorksheet('All DTP');
+    ws.columns=[{width:12},{width:16},{width:16},{width:20},{width:18},{width:30},{width:30},{width:30},{width:26},{width:18},{width:16}];
+    styleTitle(ws,'All Drug Therapy Problems — Basic Statistical Analysis',1,11);
+
+    const byDeptDTP = STATE.departments.map(d=>[deptName(d), dtpRows.filter(r=>r.department_id===d.id).length]);
+    const byType = topN(dtpRows, r=>r.problem_type, 12);
+    const byDrug = topN(dtpRows, r=>r.main_drug_generic, 12);
+    const drugInteraction = dtpRows.filter(r=>(r.problem_type||'').toLowerCase().includes('drug interaction'));
+
+    styleSubHeader(ws,'Table 1: DTPs in Different Departments',3,1,3);
+    let r1 = writeTable(ws,4,1,['Department','Count'], byDeptDTP);
+    styleSubHeader(ws,'Table 2: DTP Common Types',3,4,3);
+    writeTable(ws,4,4,['Problem Type','Count'], byType);
+    styleSubHeader(ws,'Table 3: Medications Commonly Involved',3,7,2);
+    writeTable(ws,4,7,['Drug','Count'], byDrug);
+
+    let nextRow = Math.max(r1, 4+byType.length+2, 4+byDrug.length+2) + 1;
+    styleSubHeader(ws, 'Table 4: Involved Drugs Associated with Drug Interactions', nextRow, 1, 6);
+    nextRow = writeTable(ws, nextRow+1, 1, ['Date','Department','Main Drug','Finding','Recommendation'],
+      drugInteraction.map(r=>[r.intervention_date, dn(r.department_id), r.main_drug_generic||'', r.finding_description||'', r.recommendation||'']));
+
+    styleSubHeader(ws,'All DTP Records',nextRow+1,1,7);
+    writeTable(ws,nextRow+2,1,['Date','Department','Pharmacist','Main Drug (Generic)','Main Drug (Brand)','Problem Type','Finding','Recommendation','Reference','Follow Up','Decision'],
+      dtpRows.map(r=>[r.intervention_date, dn(r.department_id), r.roster?.full_name||'', r.main_drug_generic||'', r.main_drug_brand||'', r.problem_type||'', r.finding_description||'', r.recommendation||'', r.reference_used||'', r.follow_up||'', r.physician_acceptance||'']));
+
+    const img1=await chartToImage(barCfg(byDeptDTP.map(x=>x[0]), byDeptDTP.map(x=>x[1]),'DTPs in Different Departments','#2A9D8F'));
+    const img2=await chartToImage(barCfg(byType.map(x=>x[0].slice(0,26)), byType.map(x=>x[1]),'DTP Common Types','#E9C46A'));
+    const img3=await chartToImage(barCfg(byDrug.map(x=>x[0]), byDrug.map(x=>x[1]),'Medications Commonly Involved','#E76F51'));
+    [img1,img2,img3].forEach((img,i)=>{ const id=wb.addImage({base64:img,extension:'png'}); ws.addImage(id,{tl:{col:1+i*5, row: nextRow+3}, ext:{width:420,height:250}}); });
+  }
+
+  /* ============ Sheet 3: All DTP Further Analysis ============ */
+  {
+    const ws = wb.addWorksheet('All DTP Further Analysis');
+    ws.columns=[{width:24}]; for(let i=0;i<10;i++) ws.getColumn(i+2).width=12;
+    styleTitle(ws,'All Drug Therapy Problems — Further Analysis',1,10);
+    const topDrugs = topN(dtpRows, r=>r.main_drug_generic, 10).map(x=>x[0]);
+    const topTypes = topN(dtpRows, r=>r.problem_type, 6).map(x=>x[0]);
+    styleSubHeader(ws,'Cross-tab: Drug × DTP Type (counts)',3,1,10);
+    const header=['Drug', ...topTypes.map(t=>t.length>20?t.slice(0,20)+'…':t)];
+    const matrix = topDrugs.map(drug=>{
+      const row=[drug];
+      topTypes.forEach(type=>{ row.push(dtpRows.filter(r=>r.main_drug_generic===drug && r.problem_type===type).length); });
+      return row;
+    });
+    writeTable(ws,4,1,header,matrix);
+    const img=await chartToImage(barCfg(topDrugs,topDrugs.map(d=>dtpRows.filter(r=>r.main_drug_generic===d).length),'Drugs Commonly Involved','#2A9D8F'));
+    const id=wb.addImage({base64:img,extension:'png'});
+    ws.addImage(id,{tl:{col:0,row:4+matrix.length+3}, ext:{width:520,height:280}});
+  }
+
+  /* ============ Sheet 4: Total ME overview ============ */
+  {
+    const ws = wb.addWorksheet('Total ME overview');
+    ws.columns=[{width:14},{width:20},{width:18},{width:30},{width:16},{width:24},{width:34},{width:30}];
+    styleTitle(ws,'Medication Errors in All Stages',1,8);
+    const stageOrder=['Ordering decision','Ordering Process','Preparation','Storage','Transcribing','Dispensing','Administration','Monitoring'];
+    const stageFreq={}; meRows.forEach(r=>{ const cat=stageCategory(r.error_stage)||'Other'; stageFreq[cat]=(stageFreq[cat]||0)+1; });
+    const orderedStages = stageOrder.filter(s=>stageFreq[s]!==undefined);
+    const extraStages = Object.keys(stageFreq).filter(s=>!stageOrder.includes(s));
+    const stageList=[...orderedStages, ...extraStages];
+    let row = writeTable(ws,3,1,['Stage','Frequency'], stageList.map(s=>[s,stageFreq[s]]).concat([['Total', meRows.length]]));
+
+    const severityFreq={}; meRows.forEach(r=>{ if(r.error_severity) severityFreq[r.error_severity]=(severityFreq[r.error_severity]||0)+1; });
+    styleSubHeader(ws,'Severity Breakdown', row+1, 1, 2);
+    row = writeTable(ws, row+2, 1, ['Severity','Count'], Object.entries(severityFreq));
+
+    styleSubHeader(ws,'All Medication Error Records', row+1,1,8);
+    writeTable(ws,row+2,1,['Date','Department','Pharmacist','Stage','Severity','Possible Cause','Error Description','Action Taken'],
+      meRows.map(r=>[r.intervention_date, dn(r.department_id), r.roster?.full_name||'', r.error_stage||'', r.error_severity||'', r.possible_cause||'', r.error_description||'', r.action_taken||'']));
+
+    const img1=await chartToImage(barCfg(stageList, stageList.map(s=>stageFreq[s]),'Medication Errors in All Stages','#E76F51'));
+    const img2=await chartToImage(pieCfg(Object.keys(severityFreq), Object.values(severityFreq),'Severity Distribution', ['#2A9D8F','#E9C46A','#E76F51','#8AB17D','#F4A261','#264653','#B5838D','#457B9D']));
+    const id1=wb.addImage({base64:img1,extension:'png'}); ws.addImage(id1,{tl:{col:9,row:2}, ext:{width:460,height:260}});
+    const id2=wb.addImage({base64:img2,extension:'png'}); ws.addImage(id2,{tl:{col:9,row:18}, ext:{width:420,height:260}});
+  }
+
+  /* ============ Sheet 5: ME other than Od ============ */
+  {
+    const ws = wb.addWorksheet('ME other than Od');
+    ws.columns=[{width:26},{width:16}];
+    styleTitle(ws,'Medication Errors (Other than Ordering) — Basic Statistics',1,8);
+    const byDeptME = STATE.departments.map(d=>[deptName(d), meOtherThanOd.filter(r=>r.department_id===d.id).length]);
+    const byTypeME = {}; meOtherThanOd.forEach(r=>{ const cat=stageCategory(r.error_stage)||'Other'; byTypeME[cat]=(byTypeME[cat]||0)+1; });
+    const byDrugME = topN(meOtherThanOd, r=>r.main_drug_generic, 12);
+    const byCauseME = topN(meOtherThanOd, r=>r.possible_cause, 12);
+    const bySevME = {}; meOtherThanOd.forEach(r=>{ if(r.error_severity) bySevME[r.error_severity]=(bySevME[r.error_severity]||0)+1; });
+
+    styleSubHeader(ws,'Table 1: Medication Errors in Different Departments',3,1,2);
+    let r1=writeTable(ws,4,1,['Department','Count'], byDeptME);
+    styleSubHeader(ws,'Table 2: Type of Errors',3,4,2);
+    writeTable(ws,4,4,['Error Category','Count'], Object.entries(byTypeME));
+    styleSubHeader(ws,'Table 3: Main Drug Involved',3,7,2);
+    writeTable(ws,4,7,['Drug','Count'], byDrugME);
+    let nextRow = Math.max(r1, 4+Object.keys(byTypeME).length+2, 4+byDrugME.length+2) + 1;
+    styleSubHeader(ws,'Table 4: Possible Causes',nextRow,1,2);
+    let r2=writeTable(ws,nextRow+1,1,['Cause','Count'], byCauseME);
+    styleSubHeader(ws,'Table 5: Error Category / Severity',nextRow,4,2);
+    writeTable(ws,nextRow+1,4,['Severity','Count'], Object.entries(bySevME));
+
+    const chartRow = Math.max(r2, nextRow+1+Object.keys(bySevME).length+2) + 1;
+    const img1=await chartToImage(barCfg(byDeptME.map(x=>x[0]), byDeptME.map(x=>x[1]),'MEs in Different Departments','#E76F51'));
+    const img2=await chartToImage(pieCfg(Object.keys(byTypeME), Object.values(byTypeME),'Type of Errors', ['#2A9D8F','#E9C46A','#E76F51','#8AB17D','#F4A261','#264653','#B5838D']));
+    const img3=await chartToImage(barCfg(byDrugME.map(x=>x[0]), byDrugME.map(x=>x[1]),'Main Drug Involved','#264653'));
+    [img1,img2,img3].forEach((img,i)=>{ const id=wb.addImage({base64:img,extension:'png'}); ws.addImage(id,{tl:{col:i*6, row: chartRow}, ext:{width:400,height:250}}); });
+  }
+
+  /* ============ Sheet 6: ME other than Od Further analysis ============ */
+  {
+    const ws = wb.addWorksheet('ME other than Od Further analysis');
+    ws.columns=[{width:24}]; for(let i=0;i<8;i++) ws.getColumn(i+2).width=14;
+    styleTitle(ws,'Medication Errors (Other than Ordering) — Further Analysis',1,8);
+    const topDrugsME = topN(meOtherThanOd, r=>r.main_drug_generic, 10).map(x=>x[0]);
+    const topStagesME = [...new Set(meOtherThanOd.map(r=>stageCategory(r.error_stage)).filter(Boolean))].slice(0,6);
+    styleSubHeader(ws,'Cross-tab: Drug × Error Type (counts)',3,1,8);
+    const header=['Drug', ...topStagesME];
+    const matrix = topDrugsME.map(drug=>{
+      const row=[drug];
+      topStagesME.forEach(stage=>{ row.push(meOtherThanOd.filter(r=>r.main_drug_generic===drug && stageCategory(r.error_stage)===stage).length); });
+      return row;
+    });
+    writeTable(ws,4,1,header,matrix);
+    const img=await chartToImage(barCfg(topDrugsME, topDrugsME.map(d=>meOtherThanOd.filter(r=>r.main_drug_generic===d).length),'Main Drug Involved (Other than Ordering)','#E76F51'));
+    const id=wb.addImage({base64:img,extension:'png'});
+    ws.addImage(id,{tl:{col:0,row:4+matrix.length+3}, ext:{width:520,height:280}});
+  }
+
+  /* ============ Sheet 7: KPIs ============ */
+  {
+    const ws = wb.addWorksheet('KPIs');
+    ws.columns=[{width:26},{width:16}];
+    styleTitle(ws,'Clinical Pharmacy KPIs (General or Department Specific)',1,8);
+    const byPharm = topN(all, r=>r.roster?.full_name, 20);
+    const byPharmME = topN(meOtherThanOd, r=>r.roster?.full_name, 20);
+    const byRef = topN(all, r=>r.reference_used, 15);
+
+    styleSubHeader(ws,'Table 1: Acceptance',3,1,2);
+    let r1=writeTable(ws,4,1,['Decision','Count'], [['Accepted',accept],['Rejected',reject]]);
+    styleSubHeader(ws,'Table 2: Total Reports per Pharmacist',3,4,2);
+    let r2=writeTable(ws,4,4,['Pharmacist','Total Reports'], byPharm);
+    styleSubHeader(ws,'Table 2.1: MEs Detection (other than Ordering) per Pharmacist',3,7,2);
+    let r3=writeTable(ws,4,7,['Pharmacist','ME Count'], byPharmME);
+
+    let nextRow = Math.max(r1,r2,r3) + 1;
+    styleSubHeader(ws,'Top References Used', nextRow, 1, 2);
+    writeTable(ws, nextRow+1, 1, ['Reference','Count'], byRef);
+
+    const img1=await chartToImage(pieCfg(['Accepted','Rejected'],[accept,reject],'Acceptance', ['#2A9D8F','#E76F51']));
+    const img2=await chartToImage(barCfg(byPharm.map(x=>x[0]), byPharm.map(x=>x[1]),'Total Reports per Pharmacist','#2A9D8F'));
+    const img3=await chartToImage(barCfg(byPharmME.map(x=>x[0]), byPharmME.map(x=>x[1]),'MEs Detection per Pharmacist','#E76F51'));
+    const id1=wb.addImage({base64:img1,extension:'png'}); ws.addImage(id1,{tl:{col:0,row:nextRow+2+byRef.length}, ext:{width:380,height:260}});
+    const id2=wb.addImage({base64:img2,extension:'png'}); ws.addImage(id2,{tl:{col:6,row:nextRow+2+byRef.length}, ext:{width:420,height:260}});
+    const id3=wb.addImage({base64:img3,extension:'png'}); ws.addImage(id3,{tl:{col:12,row:nextRow+2+byRef.length}, ext:{width:420,height:260}});
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:'application/octet-stream'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=`Clinical_Pharmacy_KPIs_${start}_to_${end}.xlsx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast(LANG==='ar'?'تم تحميل الملف ✅':'File downloaded ✅');
+}
+
+/* ============================================================ ANTIBIOTICS */
+function renderAntibiotics(){
+  $('#content').innerHTML=`
+    <h2 class="page-title">${t('antibiotics')}</h2>
+    <p class="page-sub">${t('antibiotics_sub')}</p>
+    <div class="grid cols-2">
+      <div class="dep-card" id="ab-kpi-link">
+        <div class="name">📊 ${t('kpi_hosp_card')}</div>
+        <div class="sub">${LANG==='ar'?'إدخال وتجميع مؤشرات استخدام المضادات الحيوية أسبوعيًا':'Enter and track weekly antibiotic stewardship indicators'}</div>
+      </div>
+      <div class="card empty-state"><div class="ic">🚧</div>${t('antibiotics_wip')}</div>
+    </div>`;
+  $('#ab-kpi-link').onclick=()=>{ STATE.kpiTab='hosp'; goto('kpis'); };
+}
+
+/* ============================================================ POLICIES */
+function renderPolicies(){
+  $('#content').innerHTML=`
+    <h2 class="page-title">${t('policies')}</h2>
+    <p class="page-sub">${t('policies_sub')}</p>
+    <div class="card empty-state"><div class="ic">🚧</div>${t('policies_wip')}</div>`;
+}
+
+/* ============================================================ NOTES */
+function renderNotes(){
+  $('#content').innerHTML=`
+    <h2 class="page-title">${t('notes')}</h2>
+    <p class="page-sub">${t('notes_sub')}</p>
+    <div class="card empty-state"><div class="ic">🚧</div>${t('notes_wip')}</div>`;
+}
+
+/* ============================================================ CALENDAR */
+async function renderCalendar(){
+  const c=$('#content');
+  const y=STATE.calYear, m=STATE.calMonth;
+  const first=new Date(y,m,1); const startOffset=first.getDay(); const daysInMonth=new Date(y,m+1,0).getDate();
+  const monthNames= LANG==='ar' ? ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'] : ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthStart=new Date(y,m,1).toISOString().slice(0,10); const monthEnd=new Date(y,m+1,0).toISOString().slice(0,10);
+  const {data:events} = await sb.from('calendar_events').select('*').gte('event_date',monthStart).lte('event_date',monthEnd).order('event_date');
+  const evByDay={}; (events||[]).forEach(e=>{const d=new Date(e.event_date).getDate(); (evByDay[d]=evByDay[d]||[]).push(e);});
+  const todayStr=new Date().toDateString();
+
+  let cells='';
+  for(let i=0;i<startOffset;i++) cells+=`<div class="cal-day empty"></div>`;
+  for(let d=1; d<=daysInMonth; d++){
+    const isToday = new Date(y,m,d).toDateString()===todayStr;
+    const evs=evByDay[d]||[];
+    cells+=`<div class="cal-day ${isToday?'today':''}" data-day="${d}"><div class="dnum">${d}</div>
+      ${evs.slice(0,2).map(e=>`<span class="evt-dot">${esc(e.title)}</span>`).join('')}
+      ${evs.length>2?`<span class="evt-dot">+${evs.length-2}</span>`:''}</div>`;
+  }
+  const dow = LANG==='ar' ? ['أحد','اثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت'] : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  c.innerHTML=`
+    <h2 class="page-title">${t('calendar')}</h2>
+    <p class="page-sub">${t('calendar_sub')}</p>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <button class="btn-outline" id="cal-prev">‹ ${t('prev')}</button>
+        <b>${monthNames[m]} ${y}</b>
+        <button class="btn-outline" id="cal-next">${t('next')} ›</button>
+      </div>
+      <div class="cal-grid">${dow.map(d=>`<div class="cal-head">${d}</div>`).join('')}${cells}</div>
+    </div>`;
+  $('#cal-prev').onclick=()=>{STATE.calMonth--; if(STATE.calMonth<0){STATE.calMonth=11;STATE.calYear--;} renderView();};
+  $('#cal-next').onclick=()=>{STATE.calMonth++; if(STATE.calMonth>11){STATE.calMonth=0;STATE.calYear++;} renderView();};
+  $$('.cal-day[data-day]').forEach(el=>el.onclick=()=>openDayModal(parseInt(el.dataset.day), evByDay[parseInt(el.dataset.day)]||[]));
+}
+
+function openDayModal(day, dayEvents){
+  const dateStr = new Date(STATE.calYear, STATE.calMonth, day).toISOString().slice(0,10);
+  const overlay=document.createElement('div'); overlay.className='modal-overlay';
+  overlay.innerHTML=`
+    <div class="modal modal-pos">
+      <button class="btn-outline close" style="position:absolute;left:18px;top:18px;">✕</button>
+      <h3>${day} — ${LANG==='ar'?'أحداث اليوم':'Day events'}</h3>
+      <div id="day-events" style="margin:14px 0;">
+        ${dayEvents.length? dayEvents.map(e=>`
+          <div class="list-row">
+            <div><b style="font-size:13px;">${esc(e.title)}</b><div style="color:var(--muted);font-size:11.5px;">${esc(e.description||'')}</div></div>
+            <button class="btn-outline del-evt" data-id="${e.id}" style="color:#D65C4A;">${LANG==='ar'?'حذف':'Delete'}</button>
+          </div>`).join('') : `<div style="color:var(--muted);font-size:13px;padding:8px 0;">${LANG==='ar'?'لا توجد أحداث بعد':'No events yet'}</div>`}
+      </div>
+      <div class="field"><label>${LANG==='ar'?'عنوان الحدث':'Event title'}</label><input type="text" id="ev-title"></div>
+      <div class="field"><label>${LANG==='ar'?'وصف (اختياري)':'Description (optional)'}</label><input type="text" id="ev-desc"></div>
+      <button class="btn-primary" id="ev-save">${LANG==='ar'?'إضافة الحدث':'Add event'}</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close').onclick=()=>overlay.remove();
+  overlay.onclick=(e)=>{if(e.target===overlay) overlay.remove();};
+  overlay.querySelectorAll('.del-evt').forEach(b=>b.onclick=async()=>{ await sb.from('calendar_events').delete().eq('id', b.dataset.id); overlay.remove(); renderView(); });
+  overlay.querySelector('#ev-save').onclick=async()=>{
+    const title=$('#ev-title',overlay).value.trim();
+    if(!title){toast(LANG==='ar'?'اكتب عنوان الحدث':'Enter a title');return;}
+    const {error} = await sb.from('calendar_events').insert({title, description:$('#ev-desc',overlay).value.trim(), event_date:dateStr, created_by:STATE.profile.id});
+    if(error){toast(LANG==='ar'?'حدث خطأ':'Something went wrong');return;}
+    overlay.remove(); toast(LANG==='ar'?'تمت إضافة الحدث':'Event added'); renderView();
+  };
+}
+
+/* ============================================================ ACCOUNT MODAL (change my department) */
+function openAccountModal(){
+  const overlay=document.createElement('div'); overlay.className='modal-overlay';
+  const myDept = STATE.departments.find(d=>d.id===STATE.profile.department_id);
+  overlay.innerHTML=`
+    <div class="modal modal-pos">
+      <button class="btn-outline close" style="position:absolute;left:18px;top:18px;">✕</button>
+      <h3>${t('account')}</h3>
+      <p class="page-sub">${esc(STATE.profile.email)}</p>
+      <div class="field"><label>${LANG==='ar'?'الاسم':'Name'}</label><input type="text" value="${esc(STATE.profile.full_name||'')}" disabled></div>
+      <div class="field"><label>${t('my_dept')}</label><select id="acc-dept">${STATE.departments.map(d=>`<option value="${d.id}" ${d.id===STATE.profile.department_id?'selected':''}>${esc(deptName(d))}</option>`).join('')}</select></div>
+      <button class="btn-primary" id="acc-save">${t('save')}</button>
+      ${STATE.isLeader? `
+      <hr style="border:none;border-top:1px solid var(--line);margin:20px 0 14px;">
+      <h3 style="margin-bottom:4px;">👥 ${t('manage_leaders')}</h3>
+      <p class="page-sub" style="margin-top:0;">${t('leader_hint')}</p>
+      <div class="formrow">
+        <div class="field" style="flex:1;"><input type="email" id="new-leader-email" placeholder="${t('leader_email_ph')}"></div>
+        <button class="btn-primary" id="add-leader-btn" style="width:auto;align-self:flex-end;">➕ ${t('add_leader')}</button>
+      </div>
+      <div style="margin-top:10px;">
+        <b style="font-size:12.5px;color:var(--muted);">${t('current_leaders')}</b>
+        <div id="leaders-list" style="margin-top:8px;">…</div>
+      </div>` : ''}
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close').onclick=()=>overlay.remove();
+  overlay.onclick=(e)=>{if(e.target===overlay)overlay.remove();};
+  overlay.querySelector('#acc-save').onclick=async()=>{
+    const newDept=$('#acc-dept',overlay).value;
+    const {error} = await sb.rpc('update_my_department', {new_dept:newDept});
+    if(error){toast(LANG==='ar'?'تعذر تغيير القسم':'Could not change department'); console.error(error); return;}
+    STATE.profile.department_id=newDept;
+    overlay.remove(); toast(LANG==='ar'?'تم تغيير القسم':'Department changed'); renderView();
+  };
+
+  if(STATE.isLeader){
+    async function refreshLeaders(){
+      const {data} = await sb.from('leader_allowlist').select('email,added_at').order('added_at');
+      const list = data||[];
+      const box = overlay.querySelector('#leaders-list');
+      box.innerHTML = list.length ? list.map(l=>`
+        <div class="list-row">
+          <span style="font-size:13px;">${esc(l.email)}</span>
+          <button class="btn-outline del-leader" data-email="${esc(l.email)}" style="color:#D65C4A;font-size:12px;padding:5px 10px;">${t('remove')}</button>
+        </div>`).join('') : `<div style="color:var(--muted);font-size:13px;">—</div>`;
+      box.querySelectorAll('.del-leader').forEach(b=>b.onclick=async()=>{
+        await sb.from('leader_allowlist').delete().eq('email', b.dataset.email);
+        toast(t('leader_removed')); refreshLeaders();
+      });
+    }
+    refreshLeaders();
+    overlay.querySelector('#add-leader-btn').onclick=async()=>{
+      const email = overlay.querySelector('#new-leader-email').value.trim();
+      if(!email){ toast(LANG==='ar'?'اكتب بريدًا إلكترونيًا':'Enter an email'); return; }
+      const {error} = await sb.from('leader_allowlist').insert({email});
+      if(error){ toast(LANG==='ar'?'تعذر الإضافة':'Could not add'); console.error(error); return; }
+      overlay.querySelector('#new-leader-email').value='';
+      toast(t('leader_added')); refreshLeaders();
+    };
+  }
+}
+
+/* ============================================================ NEW INTERVENTION MODAL */
+$('#btn-new-intervention').onclick=openInterventionModal;
+function optionsHtml(list, key='id', label='full_name'){ return list.map(x=>`<option value="${x[key]}">${esc(x[label])}</option>`).join(''); }
+
+function openInterventionModal(){
+  const overlay=document.createElement('div'); overlay.className='modal-overlay';
+  const myDeptId = STATE.profile?.department_id;
+  const myDept = STATE.departments.find(d=>d.id===myDeptId);
+  const myWards = STATE.wards.filter(w=>w.department_id===myDeptId);
+  const drugOpts = `<option value="">—</option>` + STATE.drugs.map(x=>`<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('');
+  overlay.innerHTML=`
+    <div class="modal modal-pos">
+      <button class="btn-outline close" style="position:absolute;left:18px;top:18px;">✕</button>
+      <h3>${t('newiv')}</h3>
+      <div class="formrow">
+        <div class="field"><label>${t('departments')}</label><input type="text" value="${esc(deptName(myDept))}" disabled></div>
+        <div class="field"><label>${LANG==='ar'?'الجناح':'Ward'}</label><select id="iv-ward"><option value="">—</option>${optionsHtml(myWards,'id','label')}</select></div>
+      </div>
+      <div class="field"><label>${LANG==='ar'?'معلومات المريض (اختياري)':'Patient info (optional)'}</label><input type="text" id="iv-patient"></div>
+      <div class="formrow">
+        <div class="field"><label>${LANG==='ar'?'الدواء الأساسي (علمي)':'Main drug (generic)'}</label><select id="iv-drug1g">${drugOpts}</select></div>
+        <div class="field"><label>${LANG==='ar'?'الدواء الأساسي (تجاري)':'Main drug (brand)'}</label><select id="iv-drug1b">${drugOpts}</select></div>
+      </div>
+      <div class="formrow">
+        <div class="field"><label>${LANG==='ar'?'الدواء الثاني (علمي)':'Second drug (generic)'}</label><select id="iv-drug2g">${drugOpts}</select></div>
+        <div class="field"><label>${LANG==='ar'?'الدواء الثاني (تجاري)':'Second drug (brand)'}</label><select id="iv-drug2b">${drugOpts}</select></div>
+      </div>
+      <div class="checkbox-row"><input type="checkbox" id="iv-isdtp"><label for="iv-isdtp">DTP</label></div>
+      <div id="dtp-block" class="conditional-block" style="display:none;">
+        <div class="field"><label>${LANG==='ar'?'نوع المشكلة':'Problem type'}</label><select id="iv-problem">${optionsHtml(STATE.problemTypes,'id','label')}</select></div>
+        <div class="field"><label>${LANG==='ar'?'وصف الملاحظة':'Finding'}</label><textarea id="iv-finding" rows="2"></textarea></div>
+        <div class="field"><label>${LANG==='ar'?'التوصية':'Recommendation'}</label><textarea id="iv-rec" rows="2"></textarea></div>
+        <div class="formrow">
+          <div class="field"><label>${LANG==='ar'?'المرجع':'Reference'}</label><select id="iv-ref"><option value="">—</option>${optionsHtml(STATE.refs,'id','name')}</select></div>
+          <div class="field"><label>${LANG==='ar'?'قرار الطبيب':'Physician decision'}</label><select id="iv-accept"><option value="">—</option><option value="Accept">${LANG==='ar'?'قبول':'Accept'}</option><option value="reject">${LANG==='ar'?'رفض':'Reject'}</option></select></div>
+        </div>
+        <div class="field"><label>${LANG==='ar'?'المتابعة':'Follow up'}</label><input type="text" id="iv-followup"></div>
+      </div>
+      <div class="checkbox-row"><input type="checkbox" id="iv-isme"><label for="iv-isme">${t('total_me')}</label></div>
+      <div id="me-block" class="conditional-block" style="display:none;">
+        <div class="formrow">
+          <div class="field"><label>${LANG==='ar'?'مرحلة الخطأ':'Stage'}</label><select id="iv-stage">${optionsHtml(STATE.stages,'id','label')}</select></div>
+          <div class="field"><label>${LANG==='ar'?'الخطورة':'Severity'}</label><select id="iv-severity">${optionsHtml(STATE.severities,'id','label')}</select></div>
+        </div>
+        <div class="field"><label>${LANG==='ar'?'السبب المحتمل':'Possible cause'}</label><select id="iv-cause">${optionsHtml(STATE.causes,'id','label')}</select></div>
+        <div class="field"><label>${LANG==='ar'?'وصف الخطأ':'Error description'}</label><textarea id="iv-errdesc" rows="2"></textarea></div>
+        <div class="field"><label>${LANG==='ar'?'الإجراء المتخذ':'Action taken'}</label><textarea id="iv-action" rows="2"></textarea></div>
+      </div>
+      <button class="btn-primary" id="iv-save">${t('save')}</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close').onclick=()=>overlay.remove();
+  overlay.onclick=(e)=>{if(e.target===overlay) overlay.remove();};
+
+  $('#iv-isdtp',overlay).onchange=(e)=>{$('#dtp-block',overlay).style.display=e.target.checked?'block':'none';};
+  $('#iv-isme',overlay).onchange=(e)=>{$('#me-block',overlay).style.display=e.target.checked?'block':'none';};
+
+  $('#iv-save',overlay).onclick=async()=>{
+    if(!myDeptId || !STATE.profile.roster_id){toast(LANG==='ar'?'حسابك غير مرتبط بقسم/اسم بعد، تواصل مع القائد':'Your account has no department/name linked yet'); return;}
+    const btn=$('#iv-save',overlay); btn.disabled=true; btn.textContent='...';
+    const payload={
+      department_id: myDeptId, ward_id: $('#iv-ward',overlay).value||null, roster_id: STATE.profile.roster_id,
+      submitted_by: STATE.profile.id, patient_info: $('#iv-patient',overlay).value||null,
+      main_drug_generic: $('#iv-drug1g',overlay).value||null, main_drug_brand: $('#iv-drug1b',overlay).value||null,
+      second_drug_generic: $('#iv-drug2g',overlay).value||null, second_drug_brand: $('#iv-drug2b',overlay).value||null,
+      is_dtp: $('#iv-isdtp',overlay).checked,
+      problem_type: $('#iv-isdtp',overlay).checked ? ($('#iv-problem',overlay).value||null) : null,
+      finding_description: $('#iv-isdtp',overlay).checked ? ($('#iv-finding',overlay).value||null) : null,
+      recommendation: $('#iv-isdtp',overlay).checked ? ($('#iv-rec',overlay).value||null) : null,
+      reference_used: $('#iv-isdtp',overlay).checked ? ($('#iv-ref',overlay).value||null) : null,
+      physician_acceptance: $('#iv-isdtp',overlay).checked ? ($('#iv-accept',overlay).value||null) : null,
+      follow_up: $('#iv-isdtp',overlay).checked ? ($('#iv-followup',overlay).value||null) : null,
+      is_medication_error: $('#iv-isme',overlay).checked,
+      error_stage: $('#iv-isme',overlay).checked ? ($('#iv-stage',overlay).value||null) : null,
+      error_severity: $('#iv-isme',overlay).checked ? ($('#iv-severity',overlay).value||null) : null,
+      possible_cause: $('#iv-isme',overlay).checked ? ($('#iv-cause',overlay).value||null) : null,
+      error_description: $('#iv-isme',overlay).checked ? ($('#iv-errdesc',overlay).value||null) : null,
+      action_taken: $('#iv-isme',overlay).checked ? ($('#iv-action',overlay).value||null) : null,
+    };
+    const {error} = await sb.from('interventions').insert(payload);
+    btn.disabled=false; btn.textContent=t('save');
+    if(error){toast(LANG==='ar'?'تعذر الحفظ':'Could not save'); console.error(error); return;}
+    overlay.remove(); toast(LANG==='ar'?'تم الحفظ بنجاح ✅':'Saved successfully ✅');
+    if(['home','kpis','departments'].includes(STATE.view)) renderView();
+  };
+}
+
+/* ============================================================ MONTH INTERVENTIONS MODAL (click on Total KPI) */
+async function openMonthInterventionsModal(){
+  const now=new Date();
+  const monthStart=new Date(now.getFullYear(), now.getMonth(),1).toISOString().slice(0,10);
+  const monthEnd=new Date(now.getFullYear(), now.getMonth()+1,0).toISOString().slice(0,10);
+  const {data:rows} = await sb.from('interventions')
+    .select('intervention_date,main_drug_generic,is_dtp,is_medication_error,physician_acceptance,department_id,roster(full_name)')
+    .gte('intervention_date',monthStart).lte('intervention_date',monthEnd)
+    .order('intervention_date',{ascending:false});
+  const all=rows||[];
+  const overlay=document.createElement('div'); overlay.className='modal-overlay';
+  overlay.innerHTML=`
+    <div class="modal modal-pos" style="max-width:720px;">
+      <button class="btn-outline close" style="position:absolute;left:18px;top:18px;">✕</button>
+      <h3>${t('month_all_iv')} — ${now.toLocaleDateString(LANG==='ar'?'ar-EG':'en-US',{month:'long',year:'numeric'})}</h3>
+      <div style="max-height:60vh;overflow:auto;margin-top:10px;">
+        ${all.length? `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr style="text-align:${LANG==='ar'?'right':'left'};color:var(--muted);">
+            <th style="padding:8px 6px;">${LANG==='ar'?'التاريخ':'Date'}</th>
+            <th style="padding:8px 6px;">${LANG==='ar'?'القسم':'Dept'}</th>
+            <th style="padding:8px 6px;">${LANG==='ar'?'الصيدلي':'Pharmacist'}</th>
+            <th style="padding:8px 6px;">${LANG==='ar'?'الدواء':'Drug'}</th>
+            <th style="padding:8px 6px;">DTP</th>
+            <th style="padding:8px 6px;">${t('total_me')}</th>
+          </tr></thead>
+          <tbody>${all.map(r=>`<tr style="border-top:1px solid var(--line);">
+            <td style="padding:8px 6px;">${r.intervention_date}</td>
+            <td style="padding:8px 6px;">${esc(deptName(STATE.departments.find(d=>d.id===r.department_id)))}</td>
+            <td style="padding:8px 6px;">${esc(r.roster?.full_name||'—')}</td>
+            <td style="padding:8px 6px;">${esc(r.main_drug_generic||'—')}</td>
+            <td style="padding:8px 6px;">${r.is_dtp? '✅':'—'}</td>
+            <td style="padding:8px 6px;">${r.is_medication_error? '⚠️':'—'}</td>
+          </tr>`).join('')}</tbody>
+        </table>` : `<div class="empty-state"><div class="ic">📭</div>${LANG==='ar'?'لا توجد تداخلات هذا الشهر':'No interventions this month'}</div>`}
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.close').onclick=()=>overlay.remove();
+  overlay.onclick=(e)=>{if(e.target===overlay) overlay.remove();};
+}
+</script>
+</body>
+</html>
